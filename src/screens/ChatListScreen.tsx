@@ -1,11 +1,10 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   StyleSheet,
   View,
   FlatList,
   TouchableOpacity,
   RefreshControl,
-  Animated
 } from 'react-native';
 import { Appbar, Avatar, List, Divider, ActivityIndicator } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -56,22 +55,7 @@ export const ChatListScreen: React.FC = () => {
     avatarUri: string | null;
   }>({ name: 'User', avatarUri: null });
   const [selectorModalVisible, setSelectorModalVisible] = useState(false);
-  const [bannerOpen, setBannerOpen] = useState(false);
-  // 0 = hidden, 1 = fully open
-  const bannerAnim = useRef(new Animated.Value(0)).current;
 
-  const toggleBanner = useCallback(() => {
-    const toValue = bannerOpen ? 0 : 1;
-    setBannerOpen(prev => !prev);
-    Animated.timing(bannerAnim, {
-      toValue,
-      duration: 220,
-      // useNativeDriver must be false: we animate both translateY (banner) and
-      // marginTop (list) from the same value; marginTop is a layout property.
-      useNativeDriver: false,
-    }).start();
-  }, [bannerOpen, bannerAnim]);
-  
   const loadChatList = useCallback(async (activeEntityId: string) => {
     try {
       const entities = await getAllEntities();
@@ -274,127 +258,76 @@ export const ChatListScreen: React.FC = () => {
       <Appbar.Header style={{ backgroundColor: theme?.colors.background.surface, zIndex: 10 }}>
         <Appbar.Content
           title={
-            <View>
-              <View style={styles.titleContainer}>
-                <ThemedText variant="primary" style={styles.titleText}>Chats</ThemedText>
-                <TouchableOpacity
-                  onPress={() => setInfoModalVisible(true)}
-                  style={styles.infoButton}
-                >
-                  <Icon name="information-outline" size={16} color={theme?.colors.text.muted} />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.descriptionContainer}>
-                <ThemedText variant="muted" size={12} style={styles.descriptionText}>
-                  Select an AI Entity to start chatting with
-                </ThemedText>
-              </View>
+            <View style={styles.titleContainer}>
+              <ThemedText variant="primary" style={styles.titleText}>Chats</ThemedText>
+              <TouchableOpacity
+                onPress={() => setInfoModalVisible(true)}
+                style={styles.infoButton}
+              >
+                <Icon name="information-outline" size={20} color={theme?.colors.text.muted} />
+              </TouchableOpacity>
             </View>
           }
         />
-        <Appbar.Action
-          icon={() => (
-            <TouchableOpacity onPress={toggleBanner}>
-              {impersonatedEntityDisplay.avatarUri ? (
-                <Avatar.Image size={28} source={{ uri: impersonatedEntityDisplay.avatarUri }} />
-              ) : (
-                <Avatar.Text
-                  size={28}
-                  label={impersonatedEntityDisplay.name.substring(0, 2).toUpperCase()}
-                />
-              )}
-            </TouchableOpacity>
-          )}
-          onPress={toggleBanner}
-        />
-        <Appbar.Action
-          icon={() => <Icon name="menu" size={24} color={theme?.colors.text.primary} />}
-          onPress={() => setMenuVisible(true)}
-        />
-      </Appbar.Header>
-
-      {/* Impersonation Banner - slides down from behind the Appbar */}
-      <Animated.View
-        style={[
-          styles.impersonationBanner,
-          {
-            backgroundColor: theme?.colors.background.elevated,
-            transform: [{
-              translateY: bannerAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [-60, 0],
-              }),
-            }],
-          },
-        ]}
-      >
         <TouchableOpacity
-          style={styles.impersonationBannerTouchable}
+          style={styles.impersonationHeaderAction}
           onPress={() => setSelectorModalVisible(true)}
         >
-          {impersonatedEntityDisplay.avatarUri ? (
-            <Avatar.Image size={32} source={{ uri: impersonatedEntityDisplay.avatarUri }} />
-          ) : (
-            <Avatar.Text
-              size={32}
-              label={impersonatedEntityDisplay.name.substring(0, 2).toUpperCase()}
-            />
-          )}
           <View style={styles.impersonationBannerText}>
             <ThemedText variant="muted" size={11}>Chatting as</ThemedText>
             <ThemedText variant="primary" size={14} style={{ fontWeight: '600' }}>
               {impersonatedEntityDisplay.name}
             </ThemedText>
           </View>
-          <Icon name="chevron-right" size={20} color={theme?.colors.text.muted} />
+          {impersonatedEntityDisplay.avatarUri ? (
+            <Avatar.Image size={28} source={{ uri: impersonatedEntityDisplay.avatarUri }} />
+          ) : (
+            <Avatar.Text
+              size={28}
+              label={impersonatedEntityDisplay.name.substring(0, 2).toUpperCase()}
+            />
+          )}
         </TouchableOpacity>
-      </Animated.View>
+        <Appbar.Action
+          icon={() => <Icon name="menu" size={24} color={theme?.colors.text.primary} />}
+          onPress={() => setMenuVisible(true)}
+        />
+      </Appbar.Header>
 
-      {/* List slides down together with the banner via marginTop */}
-      <Animated.View
-        style={{
-          flex: 1,
-          marginTop: bannerAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [-60, 0],
-          }),
-        }}
-      >
-        {!isPaired ? (
-          <View style={styles.notPairedContainer}>
-            <Icon name="connection" size={64} color={theme?.colors.text.muted} />
-            <ThemedText style={styles.notPairedText}>
-              Not connected to Harmony Link
-            </ThemedText>
-            <TouchableOpacity
-              style={[styles.connectButton, { backgroundColor: theme?.colors.accent.primary }]}
-              onPress={() => navigation.navigate('ConnectionSetup' as any)}
-            >
-              <ThemedText variant="primary">Connect Now</ThemedText>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <FlatList
-            data={chatList}
-            renderItem={renderItem}
-            keyExtractor={(item) => item.entityId}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Icon name="chat-outline" size={64} color={theme?.colors.text.muted} />
-                <ThemedText variant="secondary" style={styles.emptyText}>
-                  No conversations yet
-                </ThemedText>
-                <ThemedText variant="muted" size={12}>
-                  Sync with Harmony Link to load your entities
-                </ThemedText>
-              </View>
-            }
-          />
-        )}
-      </Animated.View>
+      {!isPaired ? (
+        <View style={styles.notPairedContainer}>
+          <Icon name="connection" size={64} color={theme?.colors.text.muted} />
+          <ThemedText style={styles.notPairedText}>
+            Not connected to Harmony Link
+          </ThemedText>
+          <TouchableOpacity
+            style={[styles.connectButton, { backgroundColor: theme?.colors.accent.primary }]}
+            onPress={() => navigation.navigate('ConnectionSetup' as any)}
+          >
+            <ThemedText variant="primary">Connect Now</ThemedText>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={chatList}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.entityId}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Icon name="chat-outline" size={64} color={theme?.colors.text.muted} />
+              <ThemedText variant="secondary" style={styles.emptyText}>
+                No conversations yet
+              </ThemedText>
+              <ThemedText variant="muted" size={12}>
+                Sync with Harmony Link to load your entities
+              </ThemedText>
+            </View>
+          }
+        />
+      )}
       
       <SettingsMenu
         visible={menuVisible}
@@ -465,20 +398,13 @@ const styles = StyleSheet.create({
   infoButton: { marginLeft: 8 },
   descriptionContainer: { marginTop: 2 },
   descriptionText: { fontSize: 12 },
-  impersonationBanner: {
-    overflow: 'hidden',
-  },
-  impersonationBannerInner: {
-    height: 60,
-  },
-  impersonationBannerTouchable: {
+  impersonationHeaderAction: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 12,
+    gap: 8,
+    paddingHorizontal: 8,
   },
   impersonationBannerText: {
-    flex: 1,
+    alignItems: 'flex-end',
   },
 });
