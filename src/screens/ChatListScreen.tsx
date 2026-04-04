@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
   FlatList,
   TouchableOpacity,
-  RefreshControl
+  RefreshControl,
+  Animated
 } from 'react-native';
 import { Appbar, Avatar, List, Divider, ActivityIndicator } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -20,7 +21,7 @@ import { getPrimaryImage, getCharacterProfile, imageToDataURL } from '../databas
 import { useSyncConnection } from '../contexts/SyncConnectionContext';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import ChatPreferencesService from '../services/ChatPreferencesService';
-import { EntitySelectionModal } from '../components/modals/EntitySelectionModal';
+import { ImpersonationSelectorModal } from '../components/modals/ImpersonationSelectorModal';
 import { InfoModal } from '../components/modals/InfoModal';
 import { createLogger } from '../utils/logger';
 
@@ -31,6 +32,7 @@ interface ChatListItem {
   characterId: string | null;
   characterName: string;
   lastMessage: string;
+  lastMessageSender: string; // Name of who sent the last message (e.g., "You:" or character name)
   lastMessageTime: Date | null;
   avatarUri: string | null;
 }
@@ -45,27 +47,60 @@ export const ChatListScreen: React.FC = () => {
   const [chatList, setChatList] = useState<ChatListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [entityModalVisible, setEntityModalVisible] = useState(false);
-  const [selectedPartner, setSelectedPartner] = useState<ChatListItem | null>(null);
   const [infoModalVisible, setInfoModalVisible] = useState(false);
-
-  // Default impersonated entity is "user" (fallback) - FIXME
-  const defaultImpersonatedEntityId = 'user';
   
-  const loadChatList = useCallback(async () => {
+  // Global impersonation state
+  const [impersonatedEntityId, setImpersonatedEntityId] = useState<string>('user');
+  const [impersonatedEntityDisplay, setImpersonatedEntityDisplay] = useState<{
+    name: string;
+    avatarUri: string | null;
+  }>({ name: 'User', avatarUri: null });
+  const [selectorModalVisible, setSelectorModalVisible] = useState(false);
+  const [bannerOpen, setBannerOpen] = useState(false);
+  // 0 = hidden, 1 = fully open
+  const bannerAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleBanner = useCallback(() => {
+    const toValue = bannerOpen ? 0 : 1;
+    setBannerOpen(prev => !prev);
+    Animated.timing(bannerAnim, {
+      toValue,
+      duration: 220,
+      // useNativeDriver must be false: we animate both translateY (banner) and
+      // marginTop (list) from the same value; marginTop is a layout property.
+      useNativeDriver: false,
+    }).start();
+  }, [bannerOpen, bannerAnim]);
+  
+  const loadChatList = useCallback(async (activeEntityId: string) => {
     try {
       const entities = await getAllEntities();
       const listItems: ChatListItem[] = [];
 
       for (const entity of entities) {
-        // Skip entities without a character profile linked
-        if (!entity.character_profile_id) continue;
+        // Skip the entity we're currently chatting as (can't chat with yourself)
+        if (entity.id === activeEntityId) continue;
 
-        // Get preferred impersonated entity for this partner
-        const preferredEntityId = await ChatPreferencesService.getPreferredEntity(entity.id) || defaultImpersonatedEntityId; // FIXME
+        // Get last message for preview using the global impersonated entity
+        const lastMsg = await getLastConversationMessage(activeEntityId, entity.id);
 
-        // Get last message for preview using the preferred impersonated entity
-        const lastMsg = await getLastConversationMessage(preferredEntityId, entity.id);
+        // Determine who sent the last message
+        let lastMessageSender = '';
+        if (lastMsg) {
+          if (lastMsg.sender_entity_id === activeEntityId) {
+            // We sent the last message
+            lastMessageSender = 'You';
+          } else {
+            // Partner sent the last message - use their character name
+            lastMessageSender = entity.id;
+            if (entity.character_profile_id) {
+              const profile = await getCharacterProfile(entity.character_profile_id);
+              if (profile) {
+                lastMessageSender = profile.name;
+              }
+            }
+          }
+        }
 
         // Get avatar
         let avatarUri: string | null = null;
@@ -86,6 +121,7 @@ export const ChatListScreen: React.FC = () => {
           characterId: entity.character_profile_id,
           characterName,
           lastMessage: lastMsg?.content || 'No messages yet',
+          lastMessageSender,
           lastMessageTime: lastMsg?.created_at || null,
           avatarUri
         });
@@ -106,84 +142,103 @@ export const ChatListScreen: React.FC = () => {
       setRefreshing(false);
     }
   }, []);
-  
-  useFocusEffect(
-    useCallback(() => {
-      loadChatList();
-    }, [loadChatList])
-  );
-  
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadChatList();
-  };
 
-  const handleChatPress = async (item: ChatListItem) => {
+  // Load global impersonated entity on mount
+  const loadImpersonatedEntity = useCallback(async () => {
     try {
-      // Check for existing preference
-      const preferredEntity = await ChatPreferencesService.getPreferredEntity(item.entityId);
+      const allEntities = await getAllEntities();
+      const storedId = await ChatPreferencesService.getGlobalImpersonatedEntity();
 
-      if (preferredEntity) {
-        // Navigate directly with saved preference
-        log.info(`Using saved entity preference: ${preferredEntity} for ${item.entityId}`);
-        navigation.navigate('ChatDetail', {
-          partnerEntityId: item.entityId,
-          partnerCharacterId: item.characterId || undefined,
-          impersonatedEntityId: preferredEntity,
+      // Pick best default: stored > 'user' entity > first entity
+      let resolvedId = storedId;
+      if (!resolvedId || !allEntities.some(e => e.id === resolvedId)) {
+        const userEntity = allEntities.find(e => e.id === 'user');
+        resolvedId = userEntity ? userEntity.id : allEntities[0]?.id ?? 'user';
+      }
+
+      setImpersonatedEntityId(resolvedId);
+
+      // Load display info for banner
+      const entity = allEntities.find(e => e.id === resolvedId);
+      if (entity?.character_profile_id) {
+        const profile = await getCharacterProfile(entity.character_profile_id);
+        const image = await getPrimaryImage(entity.character_profile_id);
+        setImpersonatedEntityDisplay({
+          name: profile?.name ?? resolvedId,
+          avatarUri: image ? imageToDataURL(image) : null,
         });
       } else {
-        // Show entity selection modal
-        log.info(`No entity preference found for ${item.entityId}, showing modal`);
-        setSelectedPartner(item);
-        setEntityModalVisible(true);
+        setImpersonatedEntityDisplay({ name: resolvedId, avatarUri: null });
       }
     } catch (error) {
-      log.error('Failed to handle chat press:', error);
+      log.error('Failed to load impersonated entity:', error);
     }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadImpersonatedEntity();
+    }, [loadImpersonatedEntity])
+  );
+
+  // Re-run loadChatList when impersonatedEntityId changes
+  useEffect(() => {
+    if (impersonatedEntityId) {
+      loadChatList(impersonatedEntityId);
+    }
+  }, [impersonatedEntityId, loadChatList]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadChatList(impersonatedEntityId);
   };
 
-  const handleEntitySelected = async (entityId: string) => {
-    if (!selectedPartner) return;
+  const handleChatPress = (item: ChatListItem) => {
+    // Safety check: don't allow chatting with yourself
+    if (item.entityId === impersonatedEntityId) {
+      log.warn('Cannot chat with yourself');
+      return;
+    }
+    
+    navigation.navigate('ChatDetail', {
+      partnerEntityId: item.entityId,
+      partnerCharacterId: item.characterId || undefined,
+      impersonatedEntityId,
+    });
+  };
 
+  const handleImpersonationSelect = async (entityId: string) => {
     try {
-      // Save preference
-      await ChatPreferencesService.setPreferredEntity(selectedPartner.entityId, entityId);
-      log.info(`Saved entity preference: ${entityId} for ${selectedPartner.entityId}`);
-
-      // Navigate to chat
-      navigation.navigate('ChatDetail', {
-        partnerEntityId: selectedPartner.entityId,
-        partnerCharacterId: selectedPartner.characterId || undefined,
-        impersonatedEntityId: entityId,
-      });
-
-      // Cleanup
-      setEntityModalVisible(false);
-      setSelectedPartner(null);
+      await ChatPreferencesService.setGlobalImpersonatedEntity(entityId);
+      setImpersonatedEntityId(entityId);
+      
+      // Also update the display info for the banner
+      const allEntities = await getAllEntities();
+      const entity = allEntities.find(e => e.id === entityId);
+      if (entity?.character_profile_id) {
+        const profile = await getCharacterProfile(entity.character_profile_id);
+        const image = await getPrimaryImage(entity.character_profile_id);
+        setImpersonatedEntityDisplay({
+          name: profile?.name ?? entityId,
+          avatarUri: image ? imageToDataURL(image) : null,
+        });
+      } else {
+        setImpersonatedEntityDisplay({ name: entityId, avatarUri: null });
+      }
+      
+      setSelectorModalVisible(false);
+      // loadChatList will re-run via the useEffect that watches impersonatedEntityId
     } catch (error) {
-      log.error('Failed to save entity preference:', error);
-      // Still navigate even if save failed
-      navigation.navigate('ChatDetail', {
-        partnerEntityId: selectedPartner.entityId,
-        partnerCharacterId: selectedPartner.characterId || undefined,
-        impersonatedEntityId: entityId,
-      });
-      setEntityModalVisible(false);
-      setSelectedPartner(null);
+      log.error('Failed to save global entity preference:', error);
+      setSelectorModalVisible(false);
     }
-  };
-
-  const handleEntitySelectionCancel = () => {
-    log.info('Entity selection cancelled');
-    setEntityModalVisible(false);
-    setSelectedPartner(null);
   };
 
   const renderItem = ({ item }: { item: ChatListItem }) => (
     <TouchableOpacity onPress={() => handleChatPress(item)}>
       <List.Item
         title={item.characterName}
-        description={item.lastMessage}
+        description={item.lastMessageSender ? `${item.lastMessageSender}: ${item.lastMessage}` : item.lastMessage}
         descriptionNumberOfLines={1}
         left={() => (
           item.avatarUri ? (
@@ -216,7 +271,7 @@ export const ChatListScreen: React.FC = () => {
   
   return (
     <ThemedView style={styles.container}>
-      <Appbar.Header style={{ backgroundColor: theme?.colors.background.surface }}>
+      <Appbar.Header style={{ backgroundColor: theme?.colors.background.surface, zIndex: 10 }}>
         <Appbar.Content
           title={
             <View>
@@ -238,46 +293,108 @@ export const ChatListScreen: React.FC = () => {
           }
         />
         <Appbar.Action
+          icon={() => (
+            <TouchableOpacity onPress={toggleBanner}>
+              {impersonatedEntityDisplay.avatarUri ? (
+                <Avatar.Image size={28} source={{ uri: impersonatedEntityDisplay.avatarUri }} />
+              ) : (
+                <Avatar.Text
+                  size={28}
+                  label={impersonatedEntityDisplay.name.substring(0, 2).toUpperCase()}
+                />
+              )}
+            </TouchableOpacity>
+          )}
+          onPress={toggleBanner}
+        />
+        <Appbar.Action
           icon={() => <Icon name="menu" size={24} color={theme?.colors.text.primary} />}
           onPress={() => setMenuVisible(true)}
         />
       </Appbar.Header>
-      
-      {!isPaired ? (
-        <View style={styles.notPairedContainer}>
-          <Icon name="connection" size={64} color={theme?.colors.text.muted} />
-          <ThemedText style={styles.notPairedText}>
-            Not connected to Harmony Link
-          </ThemedText>
-          <TouchableOpacity
-            style={[styles.connectButton, { backgroundColor: theme?.colors.accent.primary }]}
-            onPress={() => navigation.navigate('ConnectionSetup' as any)}
-          >
-            <ThemedText variant="primary">Connect Now</ThemedText>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={chatList}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.entityId}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Icon name="chat-outline" size={64} color={theme?.colors.text.muted} />
-              <ThemedText variant="secondary" style={styles.emptyText}>
-                No conversations yet
-              </ThemedText>
-              <ThemedText variant="muted" size={12}>
-                Sync with Harmony Link to load your entities
-              </ThemedText>
-            </View>
-          }
-        />
 
-      )}
+      {/* Impersonation Banner - slides down from behind the Appbar */}
+      <Animated.View
+        style={[
+          styles.impersonationBanner,
+          {
+            backgroundColor: theme?.colors.background.elevated,
+            transform: [{
+              translateY: bannerAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-60, 0],
+              }),
+            }],
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.impersonationBannerTouchable}
+          onPress={() => setSelectorModalVisible(true)}
+        >
+          {impersonatedEntityDisplay.avatarUri ? (
+            <Avatar.Image size={32} source={{ uri: impersonatedEntityDisplay.avatarUri }} />
+          ) : (
+            <Avatar.Text
+              size={32}
+              label={impersonatedEntityDisplay.name.substring(0, 2).toUpperCase()}
+            />
+          )}
+          <View style={styles.impersonationBannerText}>
+            <ThemedText variant="muted" size={11}>Chatting as</ThemedText>
+            <ThemedText variant="primary" size={14} style={{ fontWeight: '600' }}>
+              {impersonatedEntityDisplay.name}
+            </ThemedText>
+          </View>
+          <Icon name="chevron-right" size={20} color={theme?.colors.text.muted} />
+        </TouchableOpacity>
+      </Animated.View>
+
+      {/* List slides down together with the banner via marginTop */}
+      <Animated.View
+        style={{
+          flex: 1,
+          marginTop: bannerAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [-60, 0],
+          }),
+        }}
+      >
+        {!isPaired ? (
+          <View style={styles.notPairedContainer}>
+            <Icon name="connection" size={64} color={theme?.colors.text.muted} />
+            <ThemedText style={styles.notPairedText}>
+              Not connected to Harmony Link
+            </ThemedText>
+            <TouchableOpacity
+              style={[styles.connectButton, { backgroundColor: theme?.colors.accent.primary }]}
+              onPress={() => navigation.navigate('ConnectionSetup' as any)}
+            >
+              <ThemedText variant="primary">Connect Now</ThemedText>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={chatList}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.entityId}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Icon name="chat-outline" size={64} color={theme?.colors.text.muted} />
+                <ThemedText variant="secondary" style={styles.emptyText}>
+                  No conversations yet
+                </ThemedText>
+                <ThemedText variant="muted" size={12}>
+                  Sync with Harmony Link to load your entities
+                </ThemedText>
+              </View>
+            }
+          />
+        )}
+      </Animated.View>
       
       <SettingsMenu
         visible={menuVisible}
@@ -285,18 +402,18 @@ export const ChatListScreen: React.FC = () => {
         onNavigate={(screen) => navigation.navigate(screen as any)}
       />
 
-      <EntitySelectionModal
-        visible={entityModalVisible}
-        partnerEntityId={selectedPartner?.entityId || ''}
-        onSelect={handleEntitySelected}
-        onCancel={handleEntitySelectionCancel}
+      <ImpersonationSelectorModal
+        visible={selectorModalVisible}
+        onSelect={handleImpersonationSelect}
+        onCancel={() => setSelectorModalVisible(false)}
+        preSelectedEntityId={impersonatedEntityId}
       />
 
       <InfoModal
         visible={infoModalVisible}
         onClose={() => setInfoModalVisible(false)}
         title="About Chats & Roleplay"
-        message="Select an AI Entity from the list below to start chatting with. Each entity represents a unique AI personality you can interact with.\n\nWhen you tap on a chat, you'll be asked to choose which entity to impersonate. This allows you to roleplay as different personas - for example, you could chat as yourself, or adopt a fictional character. Your choice determines how the AI reacts to your messages.\n\nAI Entities learn individual relationships during interaction and may behave very different depending on the Persona you're using."
+        message="Select an AI Entity from the list below to start chatting with. Each entity represents a unique AI personality you can interact with.\n\nUse the 'Chatting as' banner at the top to choose which persona you want to use. This determines how each AI entity relates to you — for example, you could chat as yourself, or adopt a fictional character.\n\nAI Entities learn individual relationships during interaction and may behave very differently depending on the Persona you are using."
         icon="chat-processing"
       />
     </ThemedView>
@@ -347,5 +464,21 @@ const styles = StyleSheet.create({
   titleText: { fontWeight: 'bold', fontSize: 24 },
   infoButton: { marginLeft: 8 },
   descriptionContainer: { marginTop: 2 },
-  descriptionText: { fontSize: 12 }
+  descriptionText: { fontSize: 12 },
+  impersonationBanner: {
+    overflow: 'hidden',
+  },
+  impersonationBannerInner: {
+    height: 60,
+  },
+  impersonationBannerTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  impersonationBannerText: {
+    flex: 1,
+  },
 });

@@ -11,6 +11,7 @@ import { createLogger } from '../utils/logger';
 const log = createLogger('[ChatPreferencesService]');
 const STORAGE_KEY_PREFIX = 'chat_entity_pref_';
 const LAST_READ_PREFIX = 'chat_last_read_';
+const GLOBAL_ENTITY_KEY = 'chat_global_impersonated_entity';
 
 /**
  * Get the preferred impersonated entity for a chat partner
@@ -123,6 +124,35 @@ async function markAllAsRead(partnerEntityId: string): Promise<void> {
   await setLastReadTimestamp(partnerEntityId, Date.now());
 }
 
+/**
+ * Get the globally selected impersonated entity (used across all chats).
+ * Falls back to null if no preference is set.
+ */
+async function getGlobalImpersonatedEntity(): Promise<string | null> {
+  try {
+    const value = await AsyncStorage.getItem(GLOBAL_ENTITY_KEY);
+    log.debug(`Retrieved global impersonated entity: ${value}`);
+    return value;
+  } catch (error) {
+    log.error('Failed to get global impersonated entity:', error);
+    return null;
+  }
+}
+
+/**
+ * Set the globally selected impersonated entity.
+ * @param entityId The entity ID to use as the global persona
+ */
+async function setGlobalImpersonatedEntity(entityId: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(GLOBAL_ENTITY_KEY, entityId);
+    log.info(`Set global impersonated entity: ${entityId}`);
+  } catch (error) {
+    log.error('Failed to set global impersonated entity:', error);
+    throw error;
+  }
+}
+
 export default {
   getPreferredEntity,
   setPreferredEntity,
@@ -131,4 +161,6 @@ export default {
   setLastReadTimestamp,
   clearLastReadTimestamp,
   markAllAsRead,
+  getGlobalImpersonatedEntity,
+  setGlobalImpersonatedEntity,
 };

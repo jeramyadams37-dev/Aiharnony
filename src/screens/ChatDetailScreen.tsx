@@ -56,6 +56,9 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   // Load partner info (avatar, name)
   useEffect(() => {
     const loadPartnerInfo = async () => {
+      // Always set the entity ID as fallback first
+      setPartnerName(partnerEntityId);
+      
       if (partnerCharacterId) {
         const profile = await getCharacterProfile(partnerCharacterId);
         if (profile) {
@@ -68,7 +71,7 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
       }
     };
     loadPartnerInfo();
-  }, [partnerCharacterId]);
+  }, [partnerCharacterId, partnerEntityId]);
 
   // Load messages and last-read timestamp
   useEffect(() => {
