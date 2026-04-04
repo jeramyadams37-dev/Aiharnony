@@ -21,6 +21,7 @@ import { useSyncConnection } from '../contexts/SyncConnectionContext';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import ChatPreferencesService from '../services/ChatPreferencesService';
 import { EntitySelectionModal } from '../components/modals/EntitySelectionModal';
+import { InfoModal } from '../components/modals/InfoModal';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('[ChatListScreen]');
@@ -46,6 +47,7 @@ export const ChatListScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [entityModalVisible, setEntityModalVisible] = useState(false);
   const [selectedPartner, setSelectedPartner] = useState<ChatListItem | null>(null);
+  const [infoModalVisible, setInfoModalVisible] = useState(false);
 
   // Default impersonated entity is "user" (fallback) - FIXME
   const defaultImpersonatedEntityId = 'user';
@@ -216,8 +218,24 @@ export const ChatListScreen: React.FC = () => {
     <ThemedView style={styles.container}>
       <Appbar.Header style={{ backgroundColor: theme?.colors.background.surface }}>
         <Appbar.Content
-          title="Chats"
-          titleStyle={{ color: theme?.colors.text.primary, fontWeight: 'bold' }}
+          title={
+            <View>
+              <View style={styles.titleContainer}>
+                <ThemedText variant="primary" style={styles.titleText}>Chats</ThemedText>
+                <TouchableOpacity
+                  onPress={() => setInfoModalVisible(true)}
+                  style={styles.infoButton}
+                >
+                  <Icon name="information-outline" size={16} color={theme?.colors.text.muted} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.descriptionContainer}>
+                <ThemedText variant="muted" size={12} style={styles.descriptionText}>
+                  Select an AI Entity to start chatting with
+                </ThemedText>
+              </View>
+            </View>
+          }
         />
         <Appbar.Action
           icon={() => <Icon name="menu" size={24} color={theme?.colors.text.primary} />}
@@ -273,6 +291,14 @@ export const ChatListScreen: React.FC = () => {
         onSelect={handleEntitySelected}
         onCancel={handleEntitySelectionCancel}
       />
+
+      <InfoModal
+        visible={infoModalVisible}
+        onClose={() => setInfoModalVisible(false)}
+        title="About Chats & Roleplay"
+        message="Select an AI Entity from the list below to start chatting with. Each entity represents a unique AI personality you can interact with.\n\nWhen you tap on a chat, you'll be asked to choose which entity to impersonate. This allows you to roleplay as different personas - for example, you could chat as yourself, or adopt a fictional character. Your choice determines how the AI reacts to your messages.\n\nAI Entities learn individual relationships during interaction and may behave very different depending on the Persona you're using."
+        icon="chat-processing"
+      />
     </ThemedView>
   );
 };
@@ -316,5 +342,10 @@ const styles = StyleSheet.create({
     padding: 32,
     marginTop: 100
   },
-  emptyText: { marginTop: 16, marginBottom: 8 }
+  emptyText: { marginTop: 16, marginBottom: 8 },
+  titleContainer: { flexDirection: 'row', alignItems: 'center' },
+  titleText: { fontWeight: 'bold', fontSize: 24 },
+  infoButton: { marginLeft: 8 },
+  descriptionContainer: { marginTop: 2 },
+  descriptionText: { fontSize: 12 }
 });
