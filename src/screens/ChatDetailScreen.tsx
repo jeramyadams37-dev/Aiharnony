@@ -72,9 +72,40 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   );
 
   const flatListRef = useRef<FlatList<any>>(null);
-  const hasScrolledToNewMessages = useRef(false);
+  // NEW ref — frozen at mount, used only for divider computation
+  const sessionDividerTimestamp = useRef<number>(0);
+  // NEW ref — guards one-shot initial scroll
+  const isInitialScrollDone = useRef(false);
   // Tracks whether the user is near the bottom of the list; used to decide whether to auto-scroll on new messages
   const isNearBottom = useRef(true);
+  // NEW state — FAB visibility
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  // Controls whether the chat content is revealed; stays false until the initial
+  // scroll position has been committed so the user never sees intermediate states.
+  const [isReadyToShow, setIsReadyToShow] = useState(false);
+  // Ref mirror of isReadyToShow — readable synchronously inside effects/callbacks
+  // without closure staleness. Used to gate subsequent-message auto-scrolls so
+  // that any setMessages calls during the hidden window don't cause visible jumps.
+  const isReadyToShowRef = useRef(false);
+  // Snapshot of messages.length at the moment the chat is revealed. onContentSizeChange
+  // uses this to distinguish FlatList's initial batch-render passes (same count) from
+  // a genuinely new incoming message (count exceeds snapshot). Without this guard the
+  // list animates to the bottom multiple times during its first render batch.
+  const messagesCountAtReveal = useRef(0);
+  // Set to true when the user sends their own message (text, audio, image, edit,
+  // regenerate, transcription). The next onContentSizeChange will auto-scroll to
+  // the bottom and then clear this ref. Partner messages never set this ref, so
+  // the divider remains visible until the user manually scrolls down.
+  const pendingOwnMessageScroll = useRef(false);
+  // Stable ref to the loaded messages array — used in the initial scroll effect and scroll
+  // handlers to save the latest read timestamp without relying on closed-over state that
+  // may be stale. Always kept in sync with the `messages` state.
+  const loadedMessagesRef = useRef<ConversationMessage[]>([]);
+  // Stable ref to lastReadTimestamp — same reason: avoids stale closures in scroll handlers.
+  const lastReadTimestampRef = useRef<number>(0);
+  // Controls visibility of the new-messages divider. Set to false when the user
+  // scrolls to the bottom of the list (they've now seen all new messages).
+  const [showDivider, setShowDivider] = useState(true);
 
   // Load partner info (avatar, name)
   useEffect(() => {
@@ -108,6 +139,8 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           50,
         );
         setMessages(existingMessages);
+        // Keep ref in sync so scroll handlers always see the latest messages.
+        loadedMessagesRef.current = existingMessages;
 
         // Detect stuck transcriptions (messages with audio but no text that aren't actively transcribing)
         const stuckTranscriptions = existingMessages
@@ -130,6 +163,8 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         const timestamp =
           await ChatPreferencesService.getLastReadTimestamp(partnerEntityId);
         setLastReadTimestamp(timestamp);
+        lastReadTimestampRef.current = timestamp;
+        sessionDividerTimestamp.current = timestamp; // freeze for this session
       } catch (error) {
         log.error('Failed to load messages:', error);
       } finally {
@@ -139,6 +174,16 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
 
     loadMessagesAndTimestamp();
   }, [partnerEntityId, impersonatedEntityId]);
+
+  // Keep stable refs in sync with state so scroll handlers never see stale values
+  // (avoids stale-closure bugs when useCallback deps change between renders).
+  useEffect(() => {
+    loadedMessagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    lastReadTimestampRef.current = lastReadTimestamp;
+  }, [lastReadTimestamp]);
 
   // Session lifecycle – stop session only when the screen unmounts
   // (user navigates away).  This is intentionally NOT triggered by isConnected
@@ -265,8 +310,8 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           partnerEntityId,
           50,
         ).then(updatedMessages => {
-          // Transcription completion updates the user's own message - always scroll to it
-          isNearBottom.current = true;
+          // Transcription completion updates the user's own message — always scroll to it
+          pendingOwnMessageScroll.current = true;
           setMessages(updatedMessages);
         });
       }
@@ -350,7 +395,7 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           50,
         );
         // Always scroll to the message the user just sent
-        isNearBottom.current = true;
+        pendingOwnMessageScroll.current = true;
         setMessages(updatedMessages);
       } catch (error) {
         log.error('Failed to send message:', error);
@@ -379,7 +424,7 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           50,
         );
         // Always scroll to the message the user just sent
-        isNearBottom.current = true;
+        pendingOwnMessageScroll.current = true;
         setMessages(updatedMessages);
       } catch (error) {
         log.error('Failed to save audio message:', error);
@@ -435,7 +480,7 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             50,
           );
           // Always scroll to the message the user just sent
-          isNearBottom.current = true;
+          pendingOwnMessageScroll.current = true;
           setMessages(updatedMessages);
         }
       } catch (error: any) {
@@ -470,7 +515,7 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           50,
         );
         // Always scroll to the message the user just sent
-        isNearBottom.current = true;
+        pendingOwnMessageScroll.current = true;
         setMessages(updatedMessages);
       } catch (error) {
         log.error('Failed to send image:', error);
@@ -560,7 +605,7 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
                   50,
                 );
                 // Always scroll to the re-sent user message
-                isNearBottom.current = true;
+                pendingOwnMessageScroll.current = true;
                 setMessages(updatedMessages);
 
                 if (Platform.OS === 'android') {
@@ -729,126 +774,124 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     ]);
   }, [partnerEntityId, partnerName, navigation]);
 
-  // Calculate messages with divider
-  const messagesWithDivider = useMemo(() => {
-    if (messages.length === 0 || lastReadTimestamp === 0) {
-      return messages;
+  // Calculate messages with divider AND compute the initial scroll target in one pass.
+  // The scroll target MUST be computed synchronously during render (not in a useEffect)
+  // because onContentSizeChange fires before any effects run and needs the value.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const { messagesWithDivider, initialScrollTarget } = useMemo(() => {
+    if (messages.length === 0) {
+      return { messagesWithDivider: messages, initialScrollTarget: 'bottom' as const };
     }
 
-    // Find the first new message
-    const firstNewIndex = messages.findIndex(
-      m => m.created_at.getTime() > lastReadTimestamp,
-    );
+    let withDivider: any[] = messages;
 
-    // If no new messages or all messages are new, don't add divider
-    if (firstNewIndex === -1 || firstNewIndex === 0) {
-      return messages;
-    }
-
-    // Insert divider before first new message
-    const newMessageCount = messages.length - firstNewIndex;
-    const result: any[] = [...messages];
-    result.splice(firstNewIndex, 0, {
-      id: 'new-messages-divider',
-      type: 'divider',
-      count: newMessageCount,
-    });
-
-    return result;
-  }, [messages, lastReadTimestamp]);
-
-  // Scroll to new messages on mount
-  useEffect(() => {
-    if (messagesWithDivider.length > 0 && !hasScrolledToNewMessages.current) {
-      const dividerIndex = messagesWithDivider.findIndex(
-        (m: any) => m.type === 'divider',
+    if (sessionDividerTimestamp.current !== 0 && showDivider) { // eslint-disable-line react-hooks/exhaustive-deps
+      // Only messages from the chat partner (not the user's own messages) count
+      // as "new" for the purpose of the divider.
+      const firstNewPartnerIndex = messages.findIndex(
+        m =>
+          m.created_at.getTime() > sessionDividerTimestamp.current &&
+          m.sender_entity_id !== impersonatedEntityId,
       );
 
-      if (dividerIndex !== -1) {
-        const messagesAfterDivider =
-          messagesWithDivider.length - dividerIndex - 1;
-
-        // Small delay to ensure FlatList is rendered
-        setTimeout(() => {
-          if (messagesAfterDivider < 3) {
-            // Close to bottom, scroll to end
-            flatListRef.current?.scrollToEnd({ animated: true });
-          } else {
-            // Scroll to show divider at top; mark not-near-bottom so auto-scroll
-            // on content size change doesn't immediately override this position
-            isNearBottom.current = false;
-            try {
-              flatListRef.current?.scrollToIndex({
-                index: dividerIndex,
-                animated: true,
-                viewPosition: 0,
-              });
-            } catch (error) {
-              // Fallback to scroll to end if scrollToIndex fails
-              flatListRef.current?.scrollToEnd({ animated: true });
-            }
-          }
-          hasScrolledToNewMessages.current = true;
-        }, 100);
+      if (firstNewPartnerIndex > 0) {
+        const newMessageCount = messages.length - firstNewPartnerIndex;
+        const result: any[] = [...messages];
+        result.splice(firstNewPartnerIndex, 0, {
+          id: 'new-messages-divider',
+          type: 'divider',
+          count: newMessageCount,
+        });
+        withDivider = result;
       }
     }
-  }, [messagesWithDivider]);
+
+    // Compute where the FlatList should start — used by onContentSizeChange
+    // to scroll to the correct position during the hidden initial render phase.
+    const dividerIndex = withDivider.findIndex((m: any) => m.type === 'divider');
+    let target: 'bottom' | number = 'bottom';
+    if (dividerIndex !== -1) {
+      const messagesAfterDivider = withDivider.length - dividerIndex - 1;
+      if (messagesAfterDivider >= 3) {
+        target = dividerIndex;
+      }
+    }
+
+    return { messagesWithDivider: withDivider, initialScrollTarget: target };
+  // showDivider and impersonatedEntityId ARE deps: divider visibility depends on both.
+  // sessionDividerTimestamp.current is intentionally NOT a dep (frozen ref).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, showDivider, impersonatedEntityId]);
+
+  // Sync isNearBottom when the initial scroll target changes (computed above).
+  useEffect(() => {
+    if (!isInitialScrollDone.current) {
+      isNearBottom.current = initialScrollTarget === 'bottom';
+    }
+  }, [initialScrollTarget]);
+
+  // Helper — saves the latest read timestamp using stable refs (no stale-closure risk).
+  const persistMarkAsRead = useCallback(() => {
+    const msgs = loadedMessagesRef.current;
+    if (msgs.length === 0) return;
+    const latestTimestamp = msgs[msgs.length - 1]?.created_at.getTime() || 0;
+    if (latestTimestamp > lastReadTimestampRef.current) {
+      lastReadTimestampRef.current = latestTimestamp;
+      setLastReadTimestamp(latestTimestamp);
+      ChatPreferencesService.setLastReadTimestamp(partnerEntityId, latestTimestamp);
+    }
+    // Only hide the divider once the content is visible to the user.
+    // During the hidden initial-scroll phase, programmatic scrollToEnd also
+    // triggers handleScrollEnd — we must not remove the divider then because
+    // the user hasn't actually seen it yet.
+    if (isReadyToShowRef.current) {
+      setShowDivider(false);
+    }
+  }, [partnerEntityId]);
 
   // Capture the final scroll position accurately when a scroll animation or drag ends.
-  // This avoids relying solely on the throttled onScroll event and ensures
-  // isNearBottom.current is correct when the user "lands" at the bottom.
+  // Uses stable refs so it never reads stale closed-over state.
   const handleScrollEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } =
         event.nativeEvent;
-      isNearBottom.current =
-        contentSize.height - (contentOffset.y + layoutMeasurement.height) < 150;
+      const distanceFromBottom =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+
+      log.debug(`handleScrollEnd: distanceFromBottom=${distanceFromBottom.toFixed(1)}`);
+      isNearBottom.current = distanceFromBottom < 150;
+      setShowScrollToBottom(!isNearBottom.current);
+
+      if (isNearBottom.current) {
+        persistMarkAsRead();
+      }
     },
-    [],
+    [persistMarkAsRead],
   );
 
-  // Handle scroll for mark-as-read and near-bottom tracking
+  // Handle scroll for near-bottom tracking and mark-as-read.
+  // Uses stable refs so it never reads stale closed-over state.
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } =
         event.nativeEvent;
-      const scrollPosition = contentOffset.y;
-      const totalHeight = contentSize.height;
-      const viewportHeight = layoutMeasurement.height;
-
-      // Track whether the user is near the bottom so incoming messages can auto-scroll
       const distanceFromBottom =
-        totalHeight - (scrollPosition + viewportHeight);
-      isNearBottom.current = distanceFromBottom < 150;
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
 
-      // If scrolled past 75% of content, mark all as read
-      if (scrollPosition + viewportHeight > totalHeight * 0.75) {
-        if (messages.length > 0) {
-          const latestTimestamp =
-            messages[messages.length - 1]?.created_at.getTime() || 0;
-          if (latestTimestamp > lastReadTimestamp) {
-            setLastReadTimestamp(latestTimestamp);
-            ChatPreferencesService.setLastReadTimestamp(
-              partnerEntityId,
-              latestTimestamp,
-            );
-          }
-        }
+      isNearBottom.current = distanceFromBottom < 150;
+      setShowScrollToBottom(!isNearBottom.current);
+
+      if (isNearBottom.current) {
+        persistMarkAsRead();
       }
     },
-    [messages, lastReadTimestamp, partnerEntityId],
+    [persistMarkAsRead],
   );
 
-  // Auto-scroll to bottom whenever the message list changes and the user is near the bottom.
-  // This is the primary mechanism for scrolling on new incoming messages.
-  // A 50 ms delay lets FlatList finish rendering the new item before we scroll.
-  useEffect(() => {
-    if (messages.length > 0 && isNearBottom.current) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 50);
-    }
-  }, [messages]);
+  // NOTE: There is intentionally no "messages changed → auto-scroll" useEffect here.
+  // Auto-scroll for new incoming messages is handled exclusively by onContentSizeChange
+  // on the FlatList (below), gated by isReadyToShowRef.current. Having two mechanisms
+  // both calling scrollToEnd caused the list to animate down multiple times per new message.
 
   const renderMessage = useCallback(
     ({ item }: { item: any }) => {
@@ -907,6 +950,14 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
 
   return (
     <ThemedView style={styles.container}>
+      {/* Loading overlay — shown between data-ready and scroll-committed so
+          the user never sees the list at position 0 before it snaps to the
+          correct offset. Uses the same spinner as the initial loading state. */}
+      {!isReadyToShow && (
+        <ThemedView style={[styles.loadingOverlay, styles.centered]} pointerEvents="none">
+          <ActivityIndicator size="large" color={theme?.colors.accent.primary} />
+        </ThemedView>
+      )}
       <ThemedAppbar>
         <Appbar.BackAction
           onPress={() => navigation.goBack()}
@@ -967,7 +1018,7 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
       </ThemedAppbar>
 
       <KeyboardAvoidingView
-        style={styles.content}
+        style={[styles.content, !isReadyToShow && styles.hidden]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
@@ -981,22 +1032,100 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           scrollEventThrottle={100}
           onMomentumScrollEnd={handleScrollEnd}
           onScrollEndDrag={handleScrollEnd}
-          onContentSizeChange={() => {
-            // Auto-scroll to bottom on initial load / layout changes when near the bottom
-            if (isNearBottom.current) {
-              flatListRef.current?.scrollToEnd({ animated: false });
-            }
+          // Render all items in one pass so there are no batch-render
+          // content-size updates that would shift the scroll position after
+          // we call scrollToEnd. 50 matches the getRecentConversationMessages limit.
+          initialNumToRender={50}
+          maxToRenderPerBatch={50}
+          windowSize={21}
+          onScrollToIndexFailed={() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
           }}
-          onLayout={() => {
-            // On initial layout, default isNearBottom is true so this scrolls to the end
-            if (isNearBottom.current) {
-              flatListRef.current?.scrollToEnd({ animated: false });
+          onContentSizeChange={() => {
+            log.debug(`onContentSizeChange: isReadyToShow=${isReadyToShowRef.current}, initialScrollTarget=${initialScrollTarget}, isInitialScrollDone=${isInitialScrollDone.current}`);
+            if (!isReadyToShowRef.current) {
+              // INITIAL PHASE: FlatList is hidden. Scroll to target on every
+              // content-size change (safe since user sees nothing).
+              // initialScrollTarget is computed synchronously in useMemo so it's
+              // always current when this callback fires.
+              if (initialScrollTarget === 'bottom') {
+                flatListRef.current?.scrollToEnd({ animated: false });
+              } else if (typeof initialScrollTarget === 'number') {
+                try {
+                  flatListRef.current?.scrollToIndex({
+                    index: initialScrollTarget,
+                    animated: false,
+                    viewPosition: 0,
+                  });
+                } catch {
+                  flatListRef.current?.scrollToEnd({ animated: false });
+                }
+              }
+
+              // Mark scroll as done on first content-size change and schedule reveal.
+              // The reveal timeout also re-issues the scroll command right before
+              // making content visible — this ensures the native layout has fully
+              // committed before the scroll offset is set for the final time.
+              if (!isInitialScrollDone.current) {
+                isInitialScrollDone.current = true;
+                const revealTarget = initialScrollTarget; // capture in closure
+                setTimeout(() => {
+                  // Re-issue scroll right before reveal to overcome any layout resets
+                  log.debug(`revealTimeout: re-scrolling to target=${revealTarget}`);
+                  if (revealTarget === 'bottom') {
+                    flatListRef.current?.scrollToEnd({ animated: false });
+                  } else if (typeof revealTarget === 'number') {
+                    try {
+                      flatListRef.current?.scrollToIndex({
+                        index: revealTarget,
+                        animated: false,
+                        viewPosition: 0,
+                      });
+                    } catch {
+                      flatListRef.current?.scrollToEnd({ animated: false });
+                    }
+                  }
+                  messagesCountAtReveal.current = messagesWithDivider.length;
+                  isReadyToShowRef.current = true;
+                  setIsReadyToShow(true);
+                }, 200);
+              }
+            } else {
+              // POST-REVEAL PHASE: auto-scroll rules:
+              // 1. Own messages always scroll to bottom (pendingOwnMessageScroll).
+              // 2. Partner messages scroll only if user was already near the bottom
+              //    (isNearBottom) — so the divider stays visible when user is reading history.
+              if (messagesWithDivider.length > messagesCountAtReveal.current) {
+                messagesCountAtReveal.current = messagesWithDivider.length;
+                if (pendingOwnMessageScroll.current || isNearBottom.current) {
+                  pendingOwnMessageScroll.current = false;
+                  isNearBottom.current = true;
+                  flatListRef.current?.scrollToEnd({ animated: true });
+                }
+              }
             }
           }}
         />
 
         {isTyping && <TypingIndicator theme={theme} mode="text" />}
         {isRecording && <TypingIndicator theme={theme} mode="audio" />}
+
+        {showScrollToBottom && (
+          <TouchableOpacity
+            style={[
+              styles.scrollToBottomButton,
+              { backgroundColor: theme?.colors.accent.primary },
+            ]}
+            onPress={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            activeOpacity={0.8}
+          >
+            <Icon
+              name="chevron-down"
+              size={24}
+              color={theme?.colors.background.base}
+            />
+          </TouchableOpacity>
+        )}
 
         <ChatInput
           onSendText={handleSendText}
@@ -1022,6 +1151,15 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  // Invisible during the post-load pre-scroll window
+  hidden: {
+    opacity: 0,
+  },
+  // Absolute overlay that sits on top of the hidden content while scroll is pending
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+  },
   messageList: {
     paddingVertical: 8,
   },
@@ -1034,5 +1172,22 @@ const styles = StyleSheet.create({
   headerMenuButton: {
     paddingHorizontal: 10,
     paddingVertical: 8,
+  },
+  scrollToBottomButton: {
+    position: 'absolute',
+    right: 16,
+    // Place the FAB above the ChatInput (approx 56px) plus padding.
+    // Using 72 caused overlap on some devices; 80 gives comfortable clearance.
+    bottom: 80,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
 });
