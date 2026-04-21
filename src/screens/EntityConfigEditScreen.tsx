@@ -24,6 +24,7 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { Appbar } from 'react-native-paper';
 import { ThemedAppbar } from '../components/themed/ThemedAppbar';
@@ -71,6 +72,7 @@ export const EntityConfigEditScreen: React.FC<Props> = ({
   navigation,
 }) => {
   const { theme } = useAppTheme();
+  const { bottom: safeBottom } = useSafeAreaInsets();
   const { entityId } = route.params ?? {};
 
   // ── Identity ──────────────────────────────────────────────────────────────
@@ -468,7 +470,7 @@ export const EntityConfigEditScreen: React.FC<Props> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 48 + safeBottom }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

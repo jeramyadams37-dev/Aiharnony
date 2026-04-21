@@ -24,6 +24,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { Appbar } from 'react-native-paper';
 import { ThemedAppbar } from '../components/themed/ThemedAppbar';
@@ -351,6 +352,7 @@ const pickerStyles = StyleSheet.create({
 
 export const CreateAIScreen: React.FC<Props> = ({ route, navigation }) => {
   const { theme } = useAppTheme();
+  const { bottom: safeBottom } = useSafeAreaInsets();
 
   // ── Core fields ──────────────────────────────────────────────────────────────
   const [name, setName] = useState('');
@@ -614,7 +616,7 @@ export const CreateAIScreen: React.FC<Props> = ({ route, navigation }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 + safeBottom }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

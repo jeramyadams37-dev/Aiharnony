@@ -9,6 +9,7 @@ import {
   Alert,
   AppState,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { ThemedView } from '../themed/ThemedView';
@@ -36,6 +37,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   disabled = false,
   theme,
 }) => {
+  const { bottom: safeBottom } = useSafeAreaInsets();
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -219,7 +221,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   if (isRecording) {
     return (
-      <ThemedView style={[styles.container, { backgroundColor: theme.colors.background.surface }]}>
+      <ThemedView style={[styles.container, { backgroundColor: theme.colors.background.surface, paddingBottom: safeBottom }]}>
         <View style={styles.recordingContainer}>
           <Animated.View
             style={[
@@ -245,7 +247,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   }
 
   return (
-    <ThemedView style={[styles.container, { backgroundColor: theme.colors.background.surface }]}>
+    <ThemedView style={[styles.container, { backgroundColor: theme.colors.background.surface, paddingBottom: safeBottom }]}>
       <View style={styles.inputRow}>
         <TouchableOpacity
           onPress={handleImagePick}

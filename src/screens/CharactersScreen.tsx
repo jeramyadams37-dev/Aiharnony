@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Appbar, FAB } from 'react-native-paper';
 import { ThemedAppbar } from '../components/themed/ThemedAppbar';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -33,6 +34,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 export const CharactersScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const { theme } = useAppTheme();
+  const { bottom: safeBottom } = useSafeAreaInsets();
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [profiles, setProfiles] = useState<CharacterProfile[]>([]);
@@ -217,7 +219,7 @@ export const CharactersScreen: React.FC = () => {
           keyExtractor={item => item.id}
           numColumns={2}
           columnWrapperStyle={styles.columnWrapper}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: 80 + safeBottom }]}
           renderItem={({ item }) => (
             <CharacterProfileCard
               profile={item}
@@ -234,7 +236,7 @@ export const CharactersScreen: React.FC = () => {
       {!isLoading && (
         <FAB
           icon="plus"
-          style={[styles.fab, { backgroundColor: theme.colors.accent.primary }]}
+          style={[styles.fab, { backgroundColor: theme.colors.accent.primary, bottom: 24 + safeBottom }]}
           onPress={handleCreateNew}
           color="#fff"
         />

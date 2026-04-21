@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import {
   Appbar,
@@ -63,6 +64,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export const ChatListScreen: React.FC = () => {
   const { theme } = useAppTheme();
+  const { bottom: safeBottom } = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { isPaired } = useSyncConnection();
   const [menuVisible, setMenuVisible] = useState(false);
@@ -468,7 +470,7 @@ export const ChatListScreen: React.FC = () => {
 
       <FAB
         icon="plus"
-        style={[styles.fab, { backgroundColor: theme?.colors.accent.primary }]}
+        style={[styles.fab, { backgroundColor: theme?.colors.accent.primary, bottom: 24 + safeBottom }]}
         onPress={() => navigation.navigate('CreateAI', {})}
         color="#fff"
       />

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Appbar } from 'react-native-paper';
 import { ThemedAppbar } from '../components/themed/ThemedAppbar';
 import { useNavigation } from '@react-navigation/native';
@@ -18,6 +19,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 export const LandingScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const { theme } = useAppTheme();
+  const { bottom: safeBottom } = useSafeAreaInsets();
 
   if (!theme) return null;
 
@@ -79,7 +81,7 @@ export const LandingScreen: React.FC = () => {
         </View>
 
         {/* Footer */}
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: 16 + safeBottom }]}>
           <ThemedText variant="muted" size={11}>
             Harmony AI Chat · v{getAppVersion()}
           </ThemedText>

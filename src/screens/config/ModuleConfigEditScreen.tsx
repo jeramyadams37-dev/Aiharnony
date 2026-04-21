@@ -10,6 +10,7 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { Appbar } from 'react-native-paper';
 import { useRoute, useNavigation, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -104,6 +105,7 @@ export const ModuleConfigEditScreen: React.FC = () => {
   const route = useRoute<ModuleConfigEditRouteProp>();
   const navigation = useNavigation<ModuleConfigEditNavigationProp>();
   const { theme } = useAppTheme();
+  const { bottom: safeBottom } = useSafeAreaInsets();
   
   const { moduleType, configId } = route.params;
   const isCreate = !configId;
@@ -756,7 +758,7 @@ export const ModuleConfigEditScreen: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 48 + safeBottom }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

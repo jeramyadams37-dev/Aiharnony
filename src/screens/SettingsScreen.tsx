@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Appbar } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -21,6 +22,7 @@ type ConnectionType = 'Harmony Link' | 'Cloud' | 'Not configured';
 export const SettingsScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const { theme } = useAppTheme();
+  const { bottom: safeBottom } = useSafeAreaInsets();
   const { isConnected, isPaired, isReconnecting } = useSyncConnection();
 
   const [menuVisible, setMenuVisible] = useState(false);
@@ -87,7 +89,7 @@ export const SettingsScreen: React.FC = () => {
       </ThemedAppbar>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 32 + safeBottom }]}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Connection Card ── */}

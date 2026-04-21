@@ -6,6 +6,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Appbar, FAB } from 'react-native-paper';
 import { ThemedAppbar } from '../components/themed/ThemedAppbar';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -35,6 +36,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 export const EntityConfigScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const { theme } = useAppTheme();
+  const { bottom: safeBottom } = useSafeAreaInsets();
   const [menuVisible, setMenuVisible] = useState(false);
   const [entityItems, setEntityItems] = useState<EntityListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -175,7 +177,7 @@ export const EntityConfigScreen: React.FC = () => {
         <FlatList
           data={entityItems}
           keyExtractor={item => item.entity.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: 80 + safeBottom }]}
           renderItem={({ item }) => (
             <EntityCard
               item={item}
@@ -192,7 +194,7 @@ export const EntityConfigScreen: React.FC = () => {
 
       <FAB
         icon="plus"
-        style={[styles.fab, { backgroundColor: theme.colors.accent.primary }]}
+        style={[styles.fab, { backgroundColor: theme.colors.accent.primary, bottom: 24 + safeBottom }]}
         onPress={() => navigation.navigate('CreateAI', {})}
         color="#fff"
       />
