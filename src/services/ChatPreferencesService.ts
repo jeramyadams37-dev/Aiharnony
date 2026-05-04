@@ -12,6 +12,7 @@ const log = createLogger('[ChatPreferencesService]');
 const STORAGE_KEY_PREFIX = 'chat_entity_pref_';
 const LAST_READ_PREFIX = 'chat_last_read_';
 const GLOBAL_ENTITY_KEY = 'chat_global_impersonated_entity';
+const REPLY_MODE_PREFIX = 'chat_reply_mode_';
 
 /**
  * Get the preferred impersonated entity for a chat partner
@@ -153,6 +154,39 @@ async function setGlobalImpersonatedEntity(entityId: string): Promise<void> {
   }
 }
 
+/**
+ * Get the reply mode for a specific chat partner.
+ * Returns "realistic" if no preference is stored (default behavior).
+ * @param partnerEntityId The entity ID of the chat partner
+ * @returns "instant" or "realistic"
+ */
+async function getReplyMode(partnerEntityId: string): Promise<string> {
+  try {
+    const key = `${REPLY_MODE_PREFIX}${partnerEntityId}`;
+    const value = await AsyncStorage.getItem(key);
+    return value === 'instant' ? 'instant' : 'realistic';
+  } catch (error) {
+    log.error(`Failed to get reply mode for ${partnerEntityId}:`, error);
+    return 'realistic';
+  }
+}
+
+/**
+ * Set the reply mode for a specific chat partner.
+ * @param partnerEntityId The entity ID of the chat partner
+ * @param mode "instant" or "realistic"
+ */
+async function setReplyMode(partnerEntityId: string, mode: string): Promise<void> {
+  try {
+    const key = `${REPLY_MODE_PREFIX}${partnerEntityId}`;
+    await AsyncStorage.setItem(key, mode);
+    log.info(`Set reply mode for ${partnerEntityId}: ${mode}`);
+  } catch (error) {
+    log.error(`Failed to set reply mode for ${partnerEntityId}:`, error);
+    throw error;
+  }
+}
+
 export default {
   getPreferredEntity,
   setPreferredEntity,
@@ -163,4 +197,6 @@ export default {
   markAllAsRead,
   getGlobalImpersonatedEntity,
   setGlobalImpersonatedEntity,
+  getReplyMode,
+  setReplyMode,
 };

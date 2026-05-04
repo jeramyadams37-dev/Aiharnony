@@ -22,7 +22,7 @@ interface EntitySessionContextType {
   // Dual session management
   activeSessions: Map<string, DualEntitySession>;
   isDualSessionActive: (partnerEntityId: string) => boolean;
-  startDualSession: (partnerEntityId: string, impersonatedEntityId?: string) => Promise<void>;
+  startDualSession: (partnerEntityId: string, impersonatedEntityId?: string, replyMode?: string) => Promise<void>;
   stopDualSession: (partnerEntityId: string) => Promise<void>;
   getDualSession: (partnerEntityId: string) => DualEntitySession | null;
   
@@ -113,7 +113,7 @@ export const EntitySessionProvider: React.FC<EntitySessionProviderProps> = ({ ch
     };
   }, []);
 
-  const startDualSession = async (partnerEntityId: string, impersonatedEntityId: string = 'user'): Promise<void> => {
+  const startDualSession = async (partnerEntityId: string, impersonatedEntityId: string = 'user', replyMode: string = 'realistic'): Promise<void> => {
     if (!canStartSession) {
       throw new Error('Sync connection required for entity sessions');
     }
@@ -134,7 +134,7 @@ export const EntitySessionProvider: React.FC<EntitySessionProviderProps> = ({ ch
     try {
       // This will create sessions in 'connecting' state and return immediately
       // The sessions will transition to 'active' when INIT_ENTITY responses arrive
-      const dualSession = await entitySessionService.startDualSession(partnerEntityId, impersonatedEntityId);
+      const dualSession = await entitySessionService.startDualSession(partnerEntityId, impersonatedEntityId, replyMode);
       
       // Add to state immediately (sessions are 'connecting')
       setActiveSessions(prev => {
@@ -235,7 +235,7 @@ export const EntitySessionProvider: React.FC<EntitySessionProviderProps> = ({ ch
     });
   };
 
-  const retryInitialization = async (partnerEntityId: string, impersonatedEntityId: string) => {
+  const retryInitialization = async (partnerEntityId: string, impersonatedEntityId: string, replyMode?: string) => {
     log.info(`Retrying initialization for ${partnerEntityId}`);
     
     // Clean up any existing session
@@ -243,7 +243,7 @@ export const EntitySessionProvider: React.FC<EntitySessionProviderProps> = ({ ch
     
     // Retry
     try {
-      await startDualSession(partnerEntityId, impersonatedEntityId);
+      await startDualSession(partnerEntityId, impersonatedEntityId, replyMode);
     } catch (error) {
       log.error(`Retry failed for ${partnerEntityId}:`, error);
       // scheduleRetry will be called again by startDualSession's catch block

@@ -112,6 +112,7 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const [showDivider, setShowDivider] = useState(true);
   // Entity context menu visibility
   const [menuVisible, setMenuVisible] = useState(false);
+  const [replyMode, setReplyMode] = useState<string>('realistic');
 
   // Load partner info (avatar, name)
   useEffect(() => {
@@ -132,6 +133,15 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     };
     loadPartnerInfo();
   }, [partnerCharacterId, partnerEntityId]);
+
+  // Load reply mode preference
+  useEffect(() => {
+    const loadReplyMode = async () => {
+      const savedMode = await ChatPreferencesService.getReplyMode(partnerEntityId);
+      setReplyMode(savedMode);
+    };
+    loadReplyMode();
+  }, [partnerEntityId]);
 
   // Load messages and last-read timestamp
   useEffect(() => {
@@ -219,7 +229,10 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     const initializeSession = async () => {
       try {
         log.info(`Initializing dual session for ${partnerEntityId}...`);
-        await startDualSession(partnerEntityId, impersonatedEntityId);
+        // Load reply mode right before starting session to ensure we have the latest value
+        const savedMode = await ChatPreferencesService.getReplyMode(partnerEntityId);
+        setReplyMode(savedMode);
+        await startDualSession(partnerEntityId, impersonatedEntityId, savedMode);
         // Session starts in 'connecting' state; UI shows "Connecting..."
         // Status transitions to 'active' when INIT_ENTITY responses arrive.
       } catch (error: any) {
@@ -787,6 +800,23 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     navigation.navigate('EntityConfigEdit', { entityId: partnerEntityId });
   }, [partnerEntityId, navigation]);
 
+  const handleToggleReplyMode = useCallback(async () => {
+    const newMode = replyMode === 'realistic' ? 'instant' : 'realistic';
+    setReplyMode(newMode);
+
+    // Persist locally
+    await ChatPreferencesService.setReplyMode(partnerEntityId, newMode);
+
+    // Send to Harmony Link if session is active
+    if (isDualSessionActive(partnerEntityId)) {
+      try {
+        await EntitySessionService.setReplyMode(partnerEntityId, newMode);
+      } catch (error) {
+        log.error('Failed to send reply mode update:', error);
+      }
+    }
+  }, [replyMode, partnerEntityId, isDualSessionActive]);
+
   // Calculate messages with divider AND compute the initial scroll target in one pass.
   // The scroll target MUST be computed synchronously during render (not in a useEffect)
   // because onContentSizeChange fires before any effects run and needs the value.
@@ -1016,6 +1046,26 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             Offline
           </ThemedText>
         )}
+        {/* Reply mode toggle */}
+        <TouchableOpacity
+          onPress={handleToggleReplyMode}
+          style={styles.replyModeButton}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          disabled={!isDualSessionActive(partnerEntityId)}
+        >
+          <ThemedText
+            size={11}
+            weight="medium"
+            style={[
+              styles.replyModeText,
+              { color: replyMode === 'instant'
+                ? theme?.colors.accent.primary
+                : theme?.colors.text.muted },
+            ]}
+          >
+            {replyMode === 'instant' ? '⚡ Instant' : '💬 Realistic'}
+          </ThemedText>
+        </TouchableOpacity>
         {/* Entity context menu */}
         <TouchableOpacity
           onPress={handleEntityContextMenu}
@@ -1281,6 +1331,16 @@ const styles = StyleSheet.create({
   headerMenuButton: {
     paddingHorizontal: 10,
     paddingVertical: 8,
+  },
+  replyModeButton: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginRight: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  replyModeText: {
+    fontSize: 11,
   },
   scrollToBottomButton: {
     position: 'absolute',

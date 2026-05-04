@@ -25,6 +25,7 @@ export interface EntitySession {
   deviceType: string;
   deviceId: string;
   capabilities: string[];
+  replyMode: string;              // "instant" or "realistic"
   connectedAt: number;
   lastActivity: number;
   status: 'connecting' | 'active' | 'disconnected';
@@ -161,7 +162,8 @@ export class EntitySessionService extends EventEmitter<EntitySessionEvents> {
    */
   async startDualSession(
     partnerEntityId: string,
-    impersonatedEntityId: string = 'user'
+    impersonatedEntityId: string = 'user',
+    replyMode: string = 'realistic'
   ): Promise<DualEntitySession> {
     // Check if sync connection is active
     if (!this.connectionManager.isConnected('sync')) {
@@ -221,7 +223,8 @@ export class EntitySessionService extends EventEmitter<EntitySessionEvents> {
         partnerConnectionId,
         deviceId,
         url,
-        mode as any
+        mode as any,
+        replyMode
       );
       
       const dualSession: DualEntitySession = {
@@ -253,7 +256,8 @@ export class EntitySessionService extends EventEmitter<EntitySessionEvents> {
     connectionId: string,
     deviceId: string,
     url: string,
-    mode: ConnectionMode
+    mode: ConnectionMode,
+    replyMode: string = 'realistic'
   ): Promise<EntitySession> {
     const session: EntitySession = {
       sessionId: '', // Will be set when INIT_ENTITY response arrives
@@ -262,6 +266,7 @@ export class EntitySessionService extends EventEmitter<EntitySessionEvents> {
       deviceType: 'phone',
       deviceId,
       capabilities: ['chat'],
+      replyMode,
       connectedAt: Date.now(),
       lastActivity: Date.now(),
       status: 'connecting' // Starts as 'connecting', will become 'active' via event
@@ -316,13 +321,45 @@ export class EntitySessionService extends EventEmitter<EntitySessionEvents> {
         device_id: session.deviceId,
         device_platform: Platform.OS,
         capabilities: session.capabilities,
-        tts_output_type: 'binary' // Request binary audio output for mobile app
+        tts_output_type: 'binary', // Request binary audio output for mobile app
+        reply_mode: session.replyMode
       }
     };
     
     await this.connectionManager.sendEvent(session.connectionId, event);
   }
-  
+
+  /**
+   * Send a SET_REPLY_MODE event to update the reply mode mid-session.
+   * Also updates the stored session state.
+   */
+  async setReplyMode(partnerEntityId: string, mode: string): Promise<void> {
+    const dualSession = this.sessions.get(partnerEntityId);
+    if (!dualSession?.partnerSession) {
+      log.warn(`No active session for ${partnerEntityId}, cannot set reply mode`);
+      return;
+    }
+
+    const event = {
+      event_id: this.generateEventId(),
+      event_type: 'SET_REPLY_MODE',
+      status: 'NEW',
+      payload: {
+        entity_id: partnerEntityId,
+        reply_mode: mode
+      }
+    };
+
+    await this.connectionManager.sendEvent(
+      dualSession.partnerSession.connectionId,
+      event
+    );
+
+    // Update stored session state
+    dualSession.partnerSession.replyMode = mode;
+    log.info(`Reply mode updated to '${mode}' for ${partnerEntityId}`);
+  }
+
   async stopSession(partnerEntityId: string): Promise<void> {
     const dualSession = this.sessions.get(partnerEntityId);
     if (!dualSession) {
