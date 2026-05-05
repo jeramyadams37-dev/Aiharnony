@@ -2,7 +2,11 @@
 
 ## Objective
 
-Create `EmojiService` — a singleton service that provides emoji metadata, category groupings, image resolution (per active emoji set), and search functionality. This is the data backbone for the picker UI.
+Create `EmojiService` — a singleton service that provides:
+1. Emoji metadata, category groupings, and search (via `emoji-mart` headless)
+2. Shortcode parsing (`:joy:` → `😂`) and reverse lookup (`😂` → emoji data)
+3. Unicode emoji detection and text splitting (via `emoji-regex`)
+4. Sprite sheet image resolution per active `EmojiSet`
 
 ## Codebase References
 
@@ -17,7 +21,7 @@ Create `EmojiService` — a singleton service that provides emoji metadata, cate
 
 **File:** `src/types/emoji.ts`
 
-Define the types the service will work with:
+Define all types the service and UI components will work with:
 
 ```typescript
 /**
@@ -61,6 +65,16 @@ export interface EmojiCategory {
 }
 
 /**
+ * A segment produced by splitting text on emojis.
+ * Used by EmojiAwareText to render custom emoji images inline.
+ */
+export interface TextSegment {
+  type: 'text' | 'emoji';
+  value: string;           // for 'text': raw text; for 'emoji': the native emoji character
+  emojiEntry?: EmojiEntry; // for 'emoji': resolved emoji data (undefined if not found in lookup)
+}
+
+/**
  * Emoji style preference persisted to AsyncStorage
  */
 export interface EmojiStylePreference {
@@ -81,12 +95,17 @@ This service:
 3. Provides search via `emoji-mart`'s `SearchIndex`
 4. Resolves sprite sheet image source based on active `EmojiSet`
 5. Provides sprite sheet coordinate math for rendering individual emojis
+6. Builds **reverse lookup maps**: `nativeToEmoji` (Unicode → EmojiEntry) and `shortcodeToNative` (shortcode name → native char)
+7. Provides `parseShortcodes()` to convert `:shortcode:` patterns in text
+8. Provides `splitTextOnEmojis()` to split text into text/emoji segments using `emoji-regex`
+9. Provides `searchByShortcodePrefix()` for autocomplete suggestions
 
 ```typescript
 import { init, SearchIndex } from 'emoji-mart';
 import data from '@emoji-mart/data';
+import emojiRegex from 'emoji-regex';
 import { createLogger } from '../utils/logger';
-import { EmojiSet, EmojiEntry, EmojiCategory, EmojiSkin } from '../types/emoji';
+import { EmojiSet, EmojiEntry, EmojiCategory, EmojiSkin, TextSegment } from '../types/emoji';
 
 const log = createLogger('[EmojiService]');
 
@@ -121,7 +140,10 @@ const CATEGORY_META: Record<string, { name: string; icon: string }> = {
 class EmojiService {
   private initialized = false;
   private categories: EmojiCategory[] = [];
-  private allEmojis: Map<string, EmojiEntry> = new Map();
+  private allEmojis: Map<string, EmojiEntry> = new Map();       // id → entry
+  private nativeToEmoji: Map<string, EmojiEntry> = new Map();   // native char → entry
+  private shortcodeToNative: Map<string, string> = new Map();   // "joy" → "😂"
+  private emojiRegexInstance: RegExp = emojiRegex();
 
   /**
    * Initialize the service — loads emoji data and search index.
@@ -136,16 +158,22 @@ class EmojiService {
 
       // Transform emoji-mart data into our category structure
       this.categories = this.buildCategories(data);
-      
-      // Build flat lookup map
+
+      // Build flat lookup maps
       for (const cat of this.categories) {
         for (const emoji of cat.emojis) {
           this.allEmojis.set(emoji.id, emoji);
+
+          // Reverse lookup: native character → EmojiEntry
+          this.nativeToEmoji.set(emoji.native, emoji);
+
+          // Shortcode lookup: id (shortcode name without colons) → native char
+          this.shortcodeToNative.set(emoji.id, emoji.native);
         }
       }
 
       this.initialized = true;
-      log.info(`Initialized with ${this.allEmojis.size} emojis in ${this.categories.length} categories`);
+      log.info(`Initialized with ${this.allEmojis.size} emojis, ${this.shortcodeToNative.size} shortcodes`);
     } catch (error) {
       log.error('Failed to initialize EmojiService:', error);
       throw error;
@@ -160,32 +188,135 @@ class EmojiService {
   }
 
   /**
-   * Get a specific emoji by its id
+   * Get a specific emoji by its id (shortcode name)
    */
   getEmoji(id: string): EmojiEntry | undefined {
     return this.allEmojis.get(id);
   }
 
   /**
-   * Search emojis by keyword. Returns matching EmojiEntry[].
+   * Get an emoji by its native Unicode character.
+   * Used for reverse lookup when rendering emojis in chat bubbles.
+   */
+  getEmojiByNative(nativeChar: string): EmojiEntry | undefined {
+    return this.nativeToEmoji.get(nativeChar);
+  }
+
+  /**
+   * Search emojis by keyword or shortcode. Returns matching EmojiEntry[].
+   * Used by both the picker search bar and the autocomplete popup.
    */
   async search(query: string): Promise<EmojiEntry[]> {
     if (!query.trim()) return [];
-    
+
     try {
       const results = await SearchIndex.search(query);
       const entries: EmojiEntry[] = [];
-      
+
       for (const emoji of results) {
         const entry = this.allEmojis.get(emoji.id);
         if (entry) entries.push(entry);
       }
-      
+
       return entries;
     } catch (error) {
       log.error('Emoji search failed:', error);
       return [];
     }
+  }
+
+  /**
+   * Search by shortcode prefix (for autocomplete).
+   * Returns emojis whose id starts with the prefix, sorted by relevance.
+   * Limited to `limit` results (default 8).
+   */
+  searchByShortcodePrefix(prefix: string, limit = 8): EmojiEntry[] {
+    if (!prefix.trim()) return [];
+    const lower = prefix.toLowerCase();
+    const results: EmojiEntry[] = [];
+
+    for (const [id, entry] of this.allEmojis) {
+      if (id.startsWith(lower) || entry.keywords.some(k => k.startsWith(lower))) {
+        results.push(entry);
+        if (results.length >= limit) break;
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Parse :shortcode: patterns in text → native Unicode emoji characters.
+   * Unknown shortcodes are left as-is (not stripped).
+   * Always runs (regardless of emoji set) to normalize both user and AI messages.
+   *
+   * Example: "Hello :joy: world" → "Hello 😂 world"
+   * Example: "Hello :xyzfoo: world" → "Hello :xyzfoo: world" (unknown, kept as-is)
+   */
+  parseShortcodes(text: string): string {
+    return text.replace(/:([a-z0-9_+-]+):/gi, (match, name) => {
+      const native = this.shortcodeToNative.get(name.toLowerCase());
+      return native ?? match;
+    });
+  }
+
+  /**
+   * Split text into segments of plain text and emoji characters.
+   * Used by EmojiAwareText to render custom emoji images inline.
+   *
+   * Uses `emoji-regex` which correctly handles:
+   * - Basic emojis (single codepoint): 😀 U+1F600
+   * - Emoji with skin tone modifiers: 👍🏻 U+1F44D U+1F3FB
+   * - ZWJ sequences: 👨‍👩‍👧 U+1F468 U+200D U+1F469 U+200D U+1F467
+   * - Flag sequences: 🇺🇸 U+1F1FA U+1F1F8
+   * - Keycap sequences: #️⃣ U+0023 U+FE0F U+20E3
+   *
+   * Example: "Hello 😂 world 🙈!" →
+   *   [{type:'text', value:'Hello '},
+   *    {type:'emoji', value:'😂', emojiEntry:...},
+   *    {type:'text', value:' world '},
+   *    {type:'emoji', value:'🙈', emojiEntry:...},
+   *    {type:'text', value:'!'}]
+   */
+  splitTextOnEmojis(text: string): TextSegment[] {
+    const segments: TextSegment[] = [];
+    let lastIndex = 0;
+
+    // Reset regex state (regex is stateful with /g flag)
+    this.emojiRegexInstance.lastIndex = 0;
+
+    let match;
+    while ((match = this.emojiRegexInstance.exec(text)) !== null) {
+      const emojiChar = match[0];
+      const startIndex = match.index;
+
+      // Add preceding text segment if any
+      if (startIndex > lastIndex) {
+        segments.push({
+          type: 'text',
+          value: text.slice(lastIndex, startIndex),
+        });
+      }
+
+      // Add emoji segment with resolved entry (may be undefined if not in our data)
+      const emojiEntry = this.nativeToEmoji.get(emojiChar);
+      segments.push({
+        type: 'emoji',
+        value: emojiChar,
+        emojiEntry,
+      });
+
+      lastIndex = startIndex + emojiChar.length;
+    }
+
+    // Add remaining text
+    if (lastIndex < text.length) {
+      segments.push({
+        type: 'text',
+        value: text.slice(lastIndex),
+      });
+    }
+
+    return segments.length > 0 ? segments : [{ type: 'text', value: text }];
   }
 
   /**
@@ -279,6 +410,12 @@ export default new EmojiService();
 - **`initialize()` called once** — will be called from `EmojiContext` provider on mount
 - **`getSpriteCrop()`** — returns pixel coordinates for cropping individual emojis from the sprite sheet using RN Image `resolveAssetSource`
 - **`getSpriteSheet()`** — returns the `require()`'d image for the active set, or `null` for native
+- **`nativeToEmoji` map** — reverse lookup from Unicode character → EmojiEntry, built during init. Used by `splitTextOnEmojis()` and `EmojiAwareText`
+- **`shortcodeToNative` map** — shortcode name (without colons) → native char. Used by `parseShortcodes()`
+- **`emojiRegexInstance`** — compiled once, reused. Reset `lastIndex` before each use because the regex has the `/g` flag
+- **`splitTextOnEmojis()`** — handles ZWJ sequences, skin tone modifiers, flags, and keycaps via the `emoji-regex` library
+- **`parseShortcodes()`** — simple regex replacement, unknown shortcodes preserved as-is
+- **`searchByShortcodePrefix()`** — linear scan of the map. For ~3,600 emojis this is fast enough. If performance becomes an issue, a trie structure could be used
 
 ---
 
@@ -301,7 +438,7 @@ import { EmojiSet, EmojiSkin } from '../types/emoji';
 export function getSpriteSheetSource(emojiSet: EmojiSet): ImageResolvedSource | null {
   const sheet = EmojiService.getSpriteSheet(emojiSet);
   if (!sheet) return null;
-  
+
   const resolved = Image.resolveAssetSource(sheet);
   return resolved;
 }
@@ -316,7 +453,7 @@ export function getEmojiCropStyle(sheetX: number, sheetY: number): {
 } {
   const SPRITE_SIZE = 64;
   const SHEET_CELL = 66; // 64 + 2px border
-  
+
   const cropX = sheetX * SHEET_CELL + 1;
   const cropY = sheetY * SHEET_CELL + 1;
 
@@ -351,8 +488,13 @@ export function getEmojiDimensions(displaySize: number) {
 
 ## Progress Checklist
 
-- [ ] `src/types/emoji.ts` created with all type definitions
+- [ ] `src/types/emoji.ts` created — includes `TextSegment` type for inline rendering
 - [ ] `src/services/EmojiService.ts` created with singleton, categories, search, sprite resolution
+- [ ] `nativeToEmoji` reverse lookup map built during initialization
+- [ ] `shortcodeToNative` map built during initialization
+- [ ] `parseShortcodes()` method converts `:joy:` → `😂` in text strings
+- [ ] `splitTextOnEmojis()` method splits text into `TextSegment[]` using `emoji-regex`
+- [ ] `searchByShortcodePrefix()` method returns autocomplete matches
 - [ ] `src/utils/emojiSprite.ts` created with crop style helpers
 - [ ] TypeScript compiles without errors
 - [ ] Service can be imported and `initialize()` resolves successfully

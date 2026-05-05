@@ -1,21 +1,18 @@
-# Phase 8: Attribution & Documentation
+# Phase 9: Attribution & Documentation
 
 ## Objective
 
-Add proper third-party attribution to `README.md` for the open-licensed emoji assets used in the app. This is legally required for CC-BY 4.0 (Twemoji) and good practice for Apache 2.0 (Google Noto).
+Add proper third-party attribution to `README.md` for the open-licensed emoji assets. Legally required for CC-BY 4.0 (Twemoji) and good practice for Apache 2.0 (Google Noto). Also add `emoji-regex` attribution.
 
 ## Codebase References
 
 - [`README.md`](../../README.md) — project readme to update
-- [`.planning/codebase/CONVENTIONS.md`](../../.planning/codebase/CONVENTIONS.md)
 
 ---
 
 ## Task 1 — Add Third-Party Licenses section to README.md
 
-**File:** `README.md`
-
-Add a new section after the `## 📄 License` section (or as a new `## 📋 Third-Party Licenses & Attribution` section). Insert before `## 🔗 Links`:
+Insert before `## 🔗 Links`:
 
 ```markdown
 ## 📋 Third-Party Licenses & Attribution
@@ -45,25 +42,22 @@ This project uses the following third-party emoji assets:
 - **License:** [MIT License](https://opensource.org/licenses/MIT)
 - **Copyright:** Missive Inc.
 - **Usage:** Emoji search index and metadata used under the MIT license.
+
+### Emoji Regex
+- **Source:** [mathiasbynens/emoji-regex](https://github.com/mathiasbynens/emoji-regex)
+- **License:** [MIT License](https://opensource.org/licenses/MIT)
+- **Copyright:** Mathias Bynens
+- **Usage:** Unicode emoji detection regex used under the MIT license.
 ```
 
 ---
 
 ## Task 2 — Update README Implementation Progress
 
-**File:** `README.md`
-
-Add the emoji picker feature to the Phase 2 checklist:
+Add to Phase 2 checklist:
 
 ```markdown
-### Phase 2: Advanced Features
-- [ ] On-device AI model integration / Full Offline Mode
-- [ ] AI Lifecycle system
-- [ ] Proactive AI behaviour
-- [ ] Configure Settings and configuration in App directly
-- [ ] Custom character creation
-- [ ] Voice Calls with AIs
-+ - [X] Emoji Picker with switchable emoji styles (Native, Google Noto, Twemoji)
+- [X] Emoji Picker with switchable emoji styles (Native, Google Noto, Twemoji)
 ```
 
 ---
@@ -75,4 +69,5 @@ Add the emoji picker feature to the Phase 2 checklist:
 - [ ] Twemoji attribution present (CC-BY 4.0 for graphics)
 - [ ] Emoji Data attribution present (MIT)
 - [ ] Emoji Mart attribution present (MIT)
-- [ ] Implementation Progress section updated with emoji picker feature
+- [ ] Emoji Regex attribution present (MIT)
+- [ ] Implementation Progress section updated

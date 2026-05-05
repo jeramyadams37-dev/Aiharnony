@@ -20,6 +20,7 @@ Run the following installations:
 ```bash
 npm install emoji-mart @emoji-mart/data
 npm install emoji-datasource emoji-datasource-google emoji-datasource-twitter
+npm install emoji-regex
 ```
 
 **Packages installed:**
@@ -31,6 +32,7 @@ npm install emoji-datasource emoji-datasource-google emoji-datasource-twitter
 | `emoji-datasource` | Core emoji metadata with sprite coordinates (`sheet_x`, `sheet_y`) | MIT |
 | `emoji-datasource-google` | Google Noto sprite sheets (PNG, 64px) | MIT / Apache 2.0 |
 | `emoji-datasource-twitter` | Twemoji sprite sheets (PNG, 64px) | MIT / CC-BY 4.0 |
+| `emoji-regex` | Robust Unicode emoji detection regex (handles ZWJ, skin tones, flags) | MIT |
 
 ---
 
@@ -71,7 +73,7 @@ If images are placed in `src/assets/emoji/`, ensure TypeScript can resolve them.
 
 ## Progress Checklist
 
-- [ ] npm dependencies installed (`emoji-mart`, `@emoji-mart/data`, `emoji-datasource`, `emoji-datasource-google`, `emoji-datasource-twitter`)
+- [ ] npm dependencies installed (`emoji-mart`, `@emoji-mart/data`, `emoji-datasource`, `emoji-datasource-google`, `emoji-datasource-twitter`, `emoji-regex`)
 - [ ] Sprite sheet PNGs verified accessible in `node_modules` (or copied to `src/assets/emoji/sheets/`)
 - [ ] Image `require()` works in a test render
 - [ ] `package.json` updated with new dependencies
