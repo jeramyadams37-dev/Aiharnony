@@ -1281,41 +1281,6 @@ export class EntitySessionService extends EventEmitter<EntitySessionEvents> {
     return `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  // ===========================================================================
-  // LEGACY METHODS — DEPRECATED
-  // These are kept temporarily for compatibility during the transition.
-  // They throw clear errors pointing to the new API.
-  // ===========================================================================
-
-  /**
-   * @deprecated Use startInteractionSession instead.
-   */
-  async startDualSession(
-    partnerEntityId: string,
-    impersonatedEntityId: string = 'user',
-    replyMode: string = 'realistic'
-  ): Promise<any> {
-    throw new Error(
-      'startDualSession is deprecated. Use startInteractionSession(ownEntityId, participantIds, replyMode) instead. ' +
-      'The new method is participant-agnostic and accepts an array of participant IDs.'
-    );
-  }
-
-  /**
-   * @deprecated Use stopInteractionSession instead.
-   */
-  async stopSession(partnerEntityId: string): Promise<void> {
-    throw new Error(
-      'stopSession is deprecated. Use stopInteractionSession(interactionId) instead.'
-    );
-  }
-
-  /**
-   * @deprecated Use getInteractionSession instead.
-   */
-  getSession(partnerEntityId: string): any {
-    return null;
-  }
 }
 
 export default EntitySessionService.getInstance();
