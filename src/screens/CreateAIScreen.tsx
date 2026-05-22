@@ -33,7 +33,7 @@ import { SectionHeader } from '../components/themed/SectionHeader';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { launchImageLibrary } from 'react-native-image-picker';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useAppTheme } from '../contexts/ThemeContext';
@@ -538,10 +538,17 @@ export const CreateAIScreen: React.FC<Props> = ({ route, navigation }) => {
       }
 
       // 6. Navigate to ChatDetail — replace so back goes to ChatList, not here
+      const participantIds = [impersonatedEntityId ?? 'user', entityId];
+      const participantKey = impersonatedEntityId && impersonatedEntityId < entityId
+        ? `${impersonatedEntityId}+${entityId}`
+        : `${entityId}+${impersonatedEntityId}`;
+      const tempInteractionId = uuidv7();
       navigation.replace('ChatDetail', {
-        partnerEntityId: entityId,
-        partnerCharacterId: profileId,
-        impersonatedEntityId: impersonatedEntityId ?? 'user',
+        interactionId: tempInteractionId,
+        participantKey,
+        participantIds,
+        entityId: impersonatedEntityId ?? 'user',
+        entityName: name,
       });
     } catch (err: any) {
       Alert.alert(

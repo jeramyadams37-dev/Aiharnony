@@ -26,6 +26,12 @@ import { SettingsMenu } from '../components/navigation/SettingsMenu';
 import { getAllEntities } from '../database/repositories/entities';
 import { getLastConversationMessage } from '../database/repositories/conversation_messages';
 import {
+  getRecentPhoneInteractions,
+  getLastInteractionMessage,
+  deriveParticipantKey,
+  deriveScopeFromParticipants,
+} from '../database/repositories/interactions';
+import {
   getPrimaryImage,
   getCharacterProfile,
   imageToDataURL,
@@ -37,17 +43,22 @@ import ChatPreferencesService from '../services/ChatPreferencesService';
 import { ImpersonationSelectorModal } from '../components/modals/ImpersonationSelectorModal';
 import { InfoModal } from '../components/modals/InfoModal';
 import { createLogger } from '../utils/logger';
+import { v7 as uuidv7 } from 'uuid';
 
 const log = createLogger('[ChatListScreen]');
 
 interface ChatListItem {
+  interactionId: string;
   entityId: string;
   characterId: string | null;
   characterName: string;
   lastMessage: string;
-  lastMessageSender: string; // Name of who sent the last message (e.g., "You:" or character name)
+  lastMessageSender: string;
   lastMessageTime: Date | null;
   avatarUri: string | null;
+  participantKey: string;
+  participantIds: string[];
+  isGroup: boolean;
 }
 
 const getEntityDisplayName = (
@@ -83,68 +94,142 @@ export const ChatListScreen: React.FC = () => {
 
   const loadChatList = useCallback(async (activeEntityId: string) => {
     try {
+      setLoading(true);
+
+      // Get all entities for display info lookups
       const entities = await getAllEntities();
+      const entityMap = new Map(entities.map(e => [e.id, e]));
+
+      // Get recent phone interactions per D-15
+      const interactions = await getRecentPhoneInteractions(activeEntityId);
+
       const listItems: ChatListItem[] = [];
+      const seenPrivateKeys = new Set<string>(); // For deduping private interactions per D-01
 
-      for (const entity of entities) {
-        // Skip the entity we're currently chatting as (can't chat with yourself)
-        if (entity.id === activeEntityId) continue;
+      for (const interaction of interactions) {
+        let participantIds: string[];
+        try {
+          participantIds = JSON.parse(interaction.participant_ids);
+        } catch {
+          participantIds = [];
+        }
 
-        // Get last message for preview using the global impersonated entity
-        const lastMsg = await getLastConversationMessage(activeEntityId, entity.id);
+        const scope = interaction.interaction_scope;
 
-        // Determine who sent the last message
-        let lastMessageSender = '';
-        if (lastMsg) {
-          if (lastMsg.sender_entity_id === activeEntityId) {
-            // We sent the last message
-            lastMessageSender = 'You';
-          } else {
-            // Partner sent the last message - use their character name
-            lastMessageSender = entity.id;
-            if (entity.character_profile_id) {
-              const profile = await getCharacterProfile(
-                entity.character_profile_id,
-              );
-              if (profile) {
-                lastMessageSender = profile.name;
+        if (scope === 'private') {
+          // Private interactions: group by participant_key per D-01
+          const participantKey = interaction.participant_key || '';
+          if (!participantKey) continue;
+
+          if (seenPrivateKeys.has(participantKey)) continue;
+          seenPrivateKeys.add(participantKey);
+
+          // Find the partner entity (the one that's NOT the impersonated entity)
+          const partnerEntityId = participantIds.find(id => id !== activeEntityId);
+          if (!partnerEntityId) continue;
+
+          const entity = entityMap.get(partnerEntityId);
+
+          // Get last message preview per D-25
+          const lastMsg = await getLastInteractionMessage(activeEntityId, participantKey);
+
+          // Determine who sent the last message
+          let lastMessageSender = '';
+          if (lastMsg) {
+            if (lastMsg.sender_entity_id === activeEntityId) {
+              lastMessageSender = 'You';
+            } else {
+              lastMessageSender = partnerEntityId;
+              if (entity?.character_profile_id) {
+                const profile = await getCharacterProfile(entity.character_profile_id);
+                if (profile) {
+                  lastMessageSender = profile.name;
+                }
               }
             }
           }
-        }
 
-        // Get character profile and avatar
-        let avatarUri: string | null = null;
-        let characterProfileName: string | null = null;
-        if (entity.character_profile_id) {
-          const profile = await getCharacterProfile(
-            entity.character_profile_id,
-          );
-          characterProfileName = profile?.name ?? null;
-          const primaryImage = await getPrimaryImage(
-            entity.character_profile_id,
-          );
-          if (primaryImage) {
-            avatarUri = imageToDataURL(primaryImage);
+          // Get character profile and avatar
+          let avatarUri: string | null = null;
+          let characterProfileName: string | null = null;
+          if (entity?.character_profile_id) {
+            const profile = await getCharacterProfile(entity.character_profile_id);
+            characterProfileName = profile?.name ?? null;
+            const primaryImage = await getPrimaryImage(entity.character_profile_id);
+            if (primaryImage) {
+              avatarUri = imageToDataURL(primaryImage);
+            }
           }
+
+          const characterName = getEntityDisplayName(
+            entity?.alias ?? null,
+            characterProfileName,
+            partnerEntityId,
+          );
+
+          // Use the most recent interactionId for this participant_key
+          listItems.push({
+            interactionId: interaction.id,
+            entityId: partnerEntityId,
+            characterId: entity?.character_profile_id ?? null,
+            characterName,
+            lastMessage: lastMsg?.content || 'No messages yet',
+            lastMessageSender,
+            lastMessageTime: lastMsg?.created_at || null,
+            avatarUri,
+            participantKey,
+            participantIds,
+            isGroup: false,
+          });
+        } else if (scope === 'group') {
+          // Group interactions: show as separate entries per D-01
+          const participantKey = interaction.participant_key || '';
+
+          // Get last message preview
+          const lastMsg = await getLastInteractionMessage(activeEntityId, participantKey);
+
+          // Build display name from participant names per D-12
+          const otherParticipantIds = participantIds.filter(id => id !== activeEntityId);
+          const displayNames: string[] = [];
+          let avatarUri: string | null = null;
+
+          for (const pid of otherParticipantIds) {
+            const entity = entityMap.get(pid);
+            if (entity?.character_profile_id) {
+              const profile = await getCharacterProfile(entity.character_profile_id);
+              if (profile) {
+                displayNames.push(profile.name);
+                continue;
+              }
+            }
+            displayNames.push(pid);
+          }
+
+          // Try to get avatar from first participant
+          const firstEntity = otherParticipantIds.length > 0 ? entityMap.get(otherParticipantIds[0]) : null;
+          if (firstEntity?.character_profile_id) {
+            const primaryImage = await getPrimaryImage(firstEntity.character_profile_id);
+            if (primaryImage) {
+              avatarUri = imageToDataURL(primaryImage);
+            }
+          }
+
+          const groupName = displayNames.join(', ');
+
+          listItems.push({
+            interactionId: interaction.id,
+            entityId: '', // No single partner for groups
+            characterId: null,
+            characterName: groupName,
+            lastMessage: lastMsg?.content || 'No messages yet',
+            lastMessageSender: '',
+            lastMessageTime: lastMsg?.created_at || null,
+            avatarUri,
+            participantKey,
+            participantIds,
+            isGroup: true,
+          });
         }
-
-        // Use alias → character profile name → truncated UUID
-        const characterName = getEntityDisplayName(
-          entity.alias,
-          characterProfileName,
-          entity.id,
-        );
-
-        listItems.push({
-          entityId: entity.id,
-          characterId: entity.character_profile_id,
-          characterName,
-          lastMessage: lastMsg?.content || 'No messages yet',
-          lastMessageSender,
-          lastMessageTime: lastMsg?.created_at || null,
-          avatarUri,
-        });
       }
 
       // Sort by last message time (newest first)
@@ -217,17 +302,25 @@ export const ChatListScreen: React.FC = () => {
   };
 
   const handleChatPress = (item: ChatListItem) => {
-    // Safety check: don't allow chatting with yourself
-    if (item.entityId === impersonatedEntityId) {
-      log.warn('Cannot chat with yourself');
-      return;
+    if (item.isGroup) {
+      // Group chat: navigate with interaction info
+      navigation.navigate('ChatDetail', {
+        interactionId: item.interactionId,
+        participantKey: item.participantKey,
+        participantIds: item.participantIds,
+        entityId: impersonatedEntityId,
+        entityName: item.characterName,
+      });
+    } else {
+      // Private chat: navigate with interaction info
+      navigation.navigate('ChatDetail', {
+        interactionId: item.interactionId,
+        participantKey: item.participantKey,
+        participantIds: item.participantIds,
+        entityId: impersonatedEntityId,
+        entityName: item.characterName,
+      });
     }
-
-    navigation.navigate('ChatDetail', {
-      partnerEntityId: item.entityId,
-      partnerCharacterId: item.characterId || undefined,
-      impersonatedEntityId,
-    });
   };
 
   const handleImpersonationSelect = async (entityId: string) => {
@@ -446,7 +539,7 @@ export const ChatListScreen: React.FC = () => {
         <FlatList
           data={chatList}
           renderItem={renderItem}
-          keyExtractor={item => item.entityId}
+          keyExtractor={item => item.interactionId}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
