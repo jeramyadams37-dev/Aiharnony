@@ -460,11 +460,19 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
         <Avatar.Image size={32} source={{ uri: partnerAvatar }} style={styles.avatar} />
       )}
       {!isOwn && !partnerAvatar && (
-        <Avatar.Text 
-          size={32} 
-          label={partnerName.substring(0, 2).toUpperCase()} 
-          style={styles.avatar} 
-        />
+        <LinearGradient
+          colors={[
+            theme.colors.accent.primary + '33',
+            theme.colors.background.elevated,
+          ]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.avatarFallback}
+        >
+          <ThemedText size={13} weight="bold" style={{ color: theme.colors.accent.primary }}>
+            {partnerName.substring(0, 2).toUpperCase()}
+          </ThemedText>
+        </LinearGradient>
       )}
       
       {isOwn ? (
@@ -517,6 +525,14 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   avatar: {
+    marginRight: 8,
+  },
+  avatarFallback: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 8,
   },
   bubble: {

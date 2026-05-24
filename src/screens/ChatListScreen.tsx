@@ -363,7 +363,15 @@ export const ChatListScreen: React.FC = () => {
   useFocusEffect(
     useCallback(() => {
       loadImpersonatedEntity();
-    }, [loadImpersonatedEntity]),
+      // Reload chat list when screen gains focus (e.g., returning from
+      // ChatDetailScreen) so the last-message preview reflects any messages
+      // sent/received during the chat session. Without this, the list stays
+      // stale because impersonatedEntityId hasn't changed, so the useEffect
+      // below won't re-trigger loadChatList.
+      if (impersonatedEntityId) {
+        loadChatList(impersonatedEntityId);
+      }
+    }, [loadImpersonatedEntity, loadChatList, impersonatedEntityId]),
   );
 
   // Re-run loadChatList when impersonatedEntityId changes

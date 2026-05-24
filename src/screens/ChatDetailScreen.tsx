@@ -151,13 +151,14 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   }, [participantIds]);
 
-  // Resolve header display name per D-11
+  // Resolve header display name and avatar per D-11
   useEffect(() => {
     const resolveHeaderName = async () => {
+      // Set name from routeEntityName if provided, then CONTINUE to load avatar
       if (routeEntityName) {
         setHeaderName(routeEntityName);
         setPartnerName(routeEntityName);
-        return;
+        // Fall through to avatar loading below
       }
 
       if (isGroupChat) {
@@ -180,8 +181,10 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         }
 
         const displayName = names.join(', ');
-        setHeaderName(displayName);
-        setPartnerName(displayName);
+        if (!routeEntityName) {
+          setHeaderName(displayName);
+          setPartnerName(displayName);
+        }
 
         // Set avatar from first participant
         if (otherIds.length > 0) {
@@ -197,13 +200,15 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         // Private chat: load partner info
         const otherIds = participantIds.filter(id => id !== ownEntityId);
         const partnerEntityId = otherIds[0] || '';
-        setPartnerName(partnerEntityId);
+        if (!routeEntityName) {
+          setPartnerName(partnerEntityId);
+        }
 
         const allEntities = await getAllEntities();
         const entity = allEntities.find(e => e.id === partnerEntityId);
         if (entity?.character_profile_id) {
           const profile = await getCharacterProfile(entity.character_profile_id);
-          if (profile) {
+          if (profile && !routeEntityName) {
             setPartnerName(profile.name);
             setHeaderName(profile.name);
           }
@@ -1139,11 +1144,23 @@ export const ChatDetailScreen: React.FC<Props> = ({ route, navigation }) => {
             style={styles.headerAvatar}
           />
         ) : (
-          <Avatar.Text
-            size={36}
-            label={headerName.substring(0, 2).toUpperCase()}
-            style={styles.headerAvatar}
-          />
+          <LinearGradient
+            colors={[
+              (theme?.colors.accent.primary ?? '#7c3aed') + '33',
+              theme?.colors.background.elevated ?? '#1e1e2e',
+            ]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.headerAvatarFallback}
+          >
+            <ThemedText
+              size={14}
+              weight="bold"
+              style={{ color: theme?.colors.accent.primary }}
+            >
+              {headerName.substring(0, 2).toUpperCase()}
+            </ThemedText>
+          </LinearGradient>
         )}
         <Appbar.Content
           title={headerName}
@@ -1437,6 +1454,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   headerAvatar: {
+    marginRight: 8,
+  },
+  headerAvatarFallback: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 8,
   },
   statusIndicator: {

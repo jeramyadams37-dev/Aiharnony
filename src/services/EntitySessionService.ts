@@ -1226,7 +1226,12 @@ export class EntitySessionService extends EventEmitter<EntitySessionEvents> {
     eventId: string
   ): Promise<void> {
     // Get message_id from utterance (protocol field)
-    const messageId = utterance.message_id;
+    log.warn(`Received utterance with message id ${utterance.message_id} from entity ${utterance.entity_id} (event_id: ${eventId})`);
+
+    // Generate our own UUID for this message — each entity perspective must have
+    // unique message IDs to prevent sync LWW collisions (the sender's message ID
+    // belongs to the sender's interaction, not ours).
+    const messageId = uuidv7();
     if (!messageId) {
       log.warn(`Received utterance without message_id (event_id: ${eventId}), skipping`);
       return;
