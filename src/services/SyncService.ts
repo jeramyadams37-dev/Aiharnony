@@ -219,8 +219,17 @@ export class SyncService extends EventEmitter<SyncServiceEvents> {
     // Get the server URL from the current WebSocket connection
     const currentWsUrl = await AsyncStorage.getItem('harmony_server_url');
     if (currentWsUrl) {
-      // Replace ws:// with wss:// and update port
-      const wssUrl = currentWsUrl.replace(/^ws:\/\//, 'wss://').replace(/:\d+/, `:${payload.wss_port}`);
+      let wssUrl: string;
+
+      if (payload.wss_port === 0) {
+        // Single-port mode: WSS on same port as WS, just change scheme
+        wssUrl = currentWsUrl.replace(/^ws:\/\//, 'wss://');
+        log.info('Single-port mode: WSS on same port as WS');
+      } else {
+        // Dual-port mode: replace port with wss_port from handshake
+        wssUrl = currentWsUrl.replace(/^ws:\/\//, 'wss://').replace(/:\d+/, `:${payload.wss_port}`);
+      }
+
       await AsyncStorage.setItem('harmony_wss_url', wssUrl);
       log.info(`Constructed WSS URL: ${wssUrl}`);
     }
