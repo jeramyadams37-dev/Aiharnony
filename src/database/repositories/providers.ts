@@ -25,7 +25,49 @@ import {
   MistralProviderConfig,
   OllamaProviderConfig,
   ComfyUIProviderConfig,
+  XAIProviderConfig,
+  GoogleProviderConfig,
+  AnthropicProviderConfig,
 } from '../models';
+
+/**
+ * Check if a provider config is referenced by any active module config.
+ * Checks ALL module tables so it's future-proof — if a provider gains
+ * new module support later, it's automatically covered.
+ * 
+ * stt_configs uses a dual-FK schema (transcription_provider_config_id +
+ * vad_provider_config_id) instead of the standard provider_config_id.
+ */
+async function isProviderConfigInUse(providerName: string, id: number): Promise<boolean> {
+  const db = getDatabase();
+  const checkQuery = `
+    SELECT COUNT(*) as count FROM (
+      SELECT 1 FROM backend_configs WHERE provider = ? AND provider_config_id = ? AND deleted_at IS NULL
+      UNION ALL
+      SELECT 1 FROM cognition_configs WHERE provider = ? AND provider_config_id = ? AND deleted_at IS NULL
+      UNION ALL
+      SELECT 1 FROM movement_configs WHERE provider = ? AND provider_config_id = ? AND deleted_at IS NULL
+      UNION ALL
+      SELECT 1 FROM vision_configs WHERE provider = ? AND provider_config_id = ? AND deleted_at IS NULL
+      UNION ALL
+      SELECT 1 FROM tts_configs WHERE provider = ? AND provider_config_id = ? AND deleted_at IS NULL
+      UNION ALL
+      SELECT 1 FROM imagination_configs WHERE provider = ? AND provider_config_id = ? AND deleted_at IS NULL
+      UNION ALL
+      SELECT 1 FROM rag_configs WHERE provider = ? AND provider_config_id = ? AND deleted_at IS NULL
+      UNION ALL
+      SELECT 1 FROM stt_configs WHERE transcription_provider = ? AND transcription_provider_config_id = ? AND deleted_at IS NULL
+      UNION ALL
+      SELECT 1 FROM stt_configs WHERE vad_provider = ? AND vad_provider_config_id = ? AND deleted_at IS NULL
+    )
+  `;
+  // 9 arms, each with 2 params = 18 total
+  const params = [providerName, id, providerName, id, providerName, id, providerName, id,
+                  providerName, id, providerName, id, providerName, id, providerName, id,
+                  providerName, id];
+  const [results] = await db.executeSql(checkQuery, params);
+  return results.rows.item(0).count > 0;
+}
 
 // ============================================================================
 // OpenAI Provider Config Operations
@@ -42,11 +84,11 @@ export async function createOpenAIProviderConfig(
         tx.executeSql(
           `INSERT INTO provider_config_openai (
             name, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model, voice, speed, format,
+            stop_tokens, voice, speed, format,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, reasoning_effort,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             config.name,
             config.api_key,
@@ -56,7 +98,6 @@ export async function createOpenAIProviderConfig(
             config.top_p,
             config.n,
             config.stop_tokens,
-            config.embedding_model,
             config.voice,
             config.speed,
             config.format,
@@ -92,13 +133,13 @@ export async function getOpenAIProviderConfig(id: number, includeDeleted = false
   
   const query = includeDeleted
     ? `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model, voice, speed, format,
+            stop_tokens, voice, speed, format,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, reasoning_effort,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
      FROM provider_config_openai WHERE id = ?`
     : `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model, voice, speed, format,
+            stop_tokens, voice, speed, format,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, reasoning_effort,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
@@ -121,7 +162,6 @@ export async function getOpenAIProviderConfig(id: number, includeDeleted = false
     top_p: row.top_p,
     n: row.n,
     stop_tokens: row.stop_tokens,
-    embedding_model: row.embedding_model,
     voice: row.voice,
     speed: row.speed,
     format: row.format,
@@ -146,13 +186,13 @@ export async function getOpenAIProviderConfigByName(name: string, includeDeleted
   
   const query = includeDeleted
     ? `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model, voice, speed, format,
+            stop_tokens, voice, speed, format,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, reasoning_effort,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
      FROM provider_config_openai WHERE name = ?`
     : `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model, voice, speed, format,
+            stop_tokens, voice, speed, format,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, reasoning_effort,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
@@ -175,7 +215,6 @@ export async function getOpenAIProviderConfigByName(name: string, includeDeleted
     top_p: row.top_p,
     n: row.n,
     stop_tokens: row.stop_tokens,
-    embedding_model: row.embedding_model,
     voice: row.voice,
     speed: row.speed,
     format: row.format,
@@ -200,13 +239,13 @@ export async function getAllOpenAIProviderConfigs(includeDeleted = false): Promi
   
   const query = includeDeleted
     ? `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model, voice, speed, format,
+            stop_tokens, voice, speed, format,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, reasoning_effort,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
      FROM provider_config_openai ORDER BY name`
     : `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model, voice, speed, format,
+            stop_tokens, voice, speed, format,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, reasoning_effort,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
@@ -227,7 +266,6 @@ export async function getAllOpenAIProviderConfigs(includeDeleted = false): Promi
       top_p: row.top_p,
       n: row.n,
       stop_tokens: row.stop_tokens,
-      embedding_model: row.embedding_model,
       voice: row.voice,
       speed: row.speed,
       format: row.format,
@@ -257,7 +295,7 @@ export async function updateOpenAIProviderConfig(config: OpenAIProviderConfig): 
     const [result] = await tx.executeSql(
       `UPDATE provider_config_openai
        SET name = ?, api_key = ?, model = ?, max_tokens = ?, temperature = ?,
-           top_p = ?, n = ?, stop_tokens = ?, embedding_model = ?,
+           top_p = ?, n = ?, stop_tokens = ?,
            voice = ?, speed = ?, format = ?,
            frequency_penalty = ?, presence_penalty = ?, max_completion_tokens = ?,
            seed = ?, response_format = ?, reasoning_effort = ?,
@@ -272,7 +310,6 @@ export async function updateOpenAIProviderConfig(config: OpenAIProviderConfig): 
         config.top_p,
         config.n,
         config.stop_tokens,
-        config.embedding_model,
         config.voice,
         config.speed,
         config.format,
@@ -302,24 +339,7 @@ export async function updateOpenAIProviderConfig(config: OpenAIProviderConfig): 
  * Check if an OpenAI provider config is in use by any modules
  */
 export async function isOpenAIProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const tables = [
-    'backend_configs',
-    'cognition_configs',
-    'movement_configs',
-    'rag_configs',
-    'stt_configs',
-    'tts_configs',
-    'vision_configs',
-  ];
-  for (const table of tables) {
-    const [results] = await db.executeSql(
-      `SELECT COUNT(*) as count FROM ${table} WHERE provider = 'openai' AND provider_config_id = ? AND deleted_at IS NULL`,
-      [id]
-    );
-    if (results.rows.item(0).count > 0) return true;
-  }
-  return false;
+  return isProviderConfigInUse('openai', id);
 }
 
 export async function deleteOpenAIProviderConfig(id: number, permanent = false): Promise<void> {
@@ -365,8 +385,9 @@ export async function createOpenRouterProviderConfig(
         name, api_key, model, max_tokens, temperature, top_p, n, stop_tokens,
         frequency_penalty, presence_penalty, max_completion_tokens,
         seed, response_format, top_k, top_a, min_p, repetition_penalty,
-        sampling_preset_name, extra_params
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        sampling_preset_name, extra_params,
+        voice, speed, format, image_aspect_ratio, image_size
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         config.name,
         config.api_key,
@@ -387,6 +408,11 @@ export async function createOpenRouterProviderConfig(
         config.repetition_penalty,
         config.sampling_preset_name,
         config.extra_params,
+        config.voice,
+        config.speed,
+        config.format,
+        config.image_aspect_ratio,
+        config.image_size,
       ],
       (_, result) => {
             resolve(result.insertId!);
@@ -409,12 +435,14 @@ export async function getOpenRouterProviderConfig(id: number, includeDeleted = f
     ? `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n, stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, top_k, top_a, min_p, repetition_penalty,
-            sampling_preset_name, extra_params, deleted_at
+            sampling_preset_name, extra_params,
+            voice, speed, format, image_aspect_ratio, image_size, deleted_at
      FROM provider_config_openrouter WHERE id = ?`
     : `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n, stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, top_k, top_a, min_p, repetition_penalty,
-            sampling_preset_name, extra_params, deleted_at
+            sampling_preset_name, extra_params,
+            voice, speed, format, image_aspect_ratio, image_size, deleted_at
      FROM provider_config_openrouter WHERE id = ? AND deleted_at IS NULL`;
 
   const [results] = await db.executeSql(query, [id]);
@@ -445,6 +473,11 @@ export async function getOpenRouterProviderConfig(id: number, includeDeleted = f
     repetition_penalty: row.repetition_penalty,
     sampling_preset_name: row.sampling_preset_name,
     extra_params: row.extra_params,
+    voice: row.voice,
+    speed: row.speed,
+    format: row.format,
+    image_aspect_ratio: row.image_aspect_ratio,
+    image_size: row.image_size,
     deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
   };
 }
@@ -456,12 +489,14 @@ export async function getOpenRouterProviderConfigByName(name: string, includeDel
     ? `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n, stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, top_k, top_a, min_p, repetition_penalty,
-            sampling_preset_name, extra_params, deleted_at
+            sampling_preset_name, extra_params,
+            voice, speed, format, image_aspect_ratio, image_size, deleted_at
      FROM provider_config_openrouter WHERE name = ?`
     : `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n, stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, top_k, top_a, min_p, repetition_penalty,
-            sampling_preset_name, extra_params, deleted_at
+            sampling_preset_name, extra_params,
+            voice, speed, format, image_aspect_ratio, image_size, deleted_at
      FROM provider_config_openrouter WHERE name = ? AND deleted_at IS NULL`;
 
   const [results] = await db.executeSql(query, [name]);
@@ -492,6 +527,11 @@ export async function getOpenRouterProviderConfigByName(name: string, includeDel
     repetition_penalty: row.repetition_penalty,
     sampling_preset_name: row.sampling_preset_name,
     extra_params: row.extra_params,
+    voice: row.voice,
+    speed: row.speed,
+    format: row.format,
+    image_aspect_ratio: row.image_aspect_ratio,
+    image_size: row.image_size,
     deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
   };
 }
@@ -503,12 +543,14 @@ export async function getAllOpenRouterProviderConfigs(includeDeleted = false): P
     ? `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n, stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, top_k, top_a, min_p, repetition_penalty,
-            sampling_preset_name, extra_params, deleted_at
+            sampling_preset_name, extra_params,
+            voice, speed, format, image_aspect_ratio, image_size, deleted_at
      FROM provider_config_openrouter ORDER BY name`
     : `SELECT id, name, api_key, model, max_tokens, temperature, top_p, n, stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format, top_k, top_a, min_p, repetition_penalty,
-            sampling_preset_name, extra_params, deleted_at
+            sampling_preset_name, extra_params,
+            voice, speed, format, image_aspect_ratio, image_size, deleted_at
      FROM provider_config_openrouter WHERE deleted_at IS NULL ORDER BY name`;
 
   const [results] = await db.executeSql(query);
@@ -537,6 +579,11 @@ export async function getAllOpenRouterProviderConfigs(includeDeleted = false): P
       repetition_penalty: row.repetition_penalty,
       sampling_preset_name: row.sampling_preset_name,
       extra_params: row.extra_params,
+      voice: row.voice,
+      speed: row.speed,
+      format: row.format,
+      image_aspect_ratio: row.image_aspect_ratio,
+      image_size: row.image_size,
       deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
     });
   }
@@ -554,7 +601,8 @@ export async function updateOpenRouterProviderConfig(config: OpenRouterProviderC
            top_p = ?, n = ?, stop_tokens = ?,
            frequency_penalty = ?, presence_penalty = ?, max_completion_tokens = ?,
            seed = ?, response_format = ?, top_k = ?, top_a = ?, min_p = ?,
-           repetition_penalty = ?, sampling_preset_name = ?, extra_params = ?
+           repetition_penalty = ?, sampling_preset_name = ?, extra_params = ?,
+           voice = ?, speed = ?, format = ?, image_aspect_ratio = ?, image_size = ?
        WHERE id = ?`,
       [
         config.name,
@@ -576,6 +624,11 @@ export async function updateOpenRouterProviderConfig(config: OpenRouterProviderC
         config.repetition_penalty,
         config.sampling_preset_name,
         config.extra_params,
+        config.voice,
+        config.speed,
+        config.format,
+        config.image_aspect_ratio,
+        config.image_size,
         config.id,
       ]
     );
@@ -590,24 +643,7 @@ export async function updateOpenRouterProviderConfig(config: OpenRouterProviderC
  * Check if an OpenRouter provider config is in use by any modules
  */
 export async function isOpenRouterProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const tables = [
-    'backend_configs',
-    'cognition_configs',
-    'movement_configs',
-    'rag_configs',
-    'stt_configs',
-    'tts_configs',
-    'vision_configs',
-  ];
-  for (const table of tables) {
-    const [results] = await db.executeSql(
-      `SELECT COUNT(*) as count FROM ${table} WHERE provider = 'openrouter' AND provider_config_id = ? AND deleted_at IS NULL`,
-      [id]
-    );
-    if (results.rows.item(0).count > 0) return true;
-  }
-  return false;
+  return isProviderConfigInUse('openrouter', id);
 }
 
 export async function deleteOpenRouterProviderConfig(id: number, permanent = false): Promise<void> {
@@ -651,11 +687,11 @@ export async function createOpenAICompatibleProviderConfig(
         tx.executeSql(
       `INSERT INTO provider_config_openaicompatible (
         name, base_url, api_key, model, max_tokens, temperature, top_p, n,
-        stop_tokens, embedding_model,
+        stop_tokens,
         frequency_penalty, presence_penalty, max_completion_tokens,
         seed, response_format,
         top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         config.name,
         config.base_url,
@@ -666,7 +702,6 @@ export async function createOpenAICompatibleProviderConfig(
         config.top_p,
         config.n,
         config.stop_tokens,
-        config.embedding_model,
         config.frequency_penalty,
         config.presence_penalty,
         config.max_completion_tokens,
@@ -698,13 +733,13 @@ export async function getOpenAICompatibleProviderConfig(id: number, includeDelet
   
   const query = includeDeleted
     ? `SELECT id, name, base_url, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model,
+            stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
      FROM provider_config_openaicompatible WHERE id = ?`
     : `SELECT id, name, base_url, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model,
+            stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
@@ -728,7 +763,6 @@ export async function getOpenAICompatibleProviderConfig(id: number, includeDelet
     top_p: row.top_p,
     n: row.n,
     stop_tokens: row.stop_tokens,
-    embedding_model: row.embedding_model,
     frequency_penalty: row.frequency_penalty,
     presence_penalty: row.presence_penalty,
     max_completion_tokens: row.max_completion_tokens,
@@ -749,13 +783,13 @@ export async function getOpenAICompatibleProviderConfigByName(name: string, incl
   
   const query = includeDeleted
     ? `SELECT id, name, base_url, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model,
+            stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
      FROM provider_config_openaicompatible WHERE name = ?`
     : `SELECT id, name, base_url, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model,
+            stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
@@ -779,7 +813,6 @@ export async function getOpenAICompatibleProviderConfigByName(name: string, incl
     top_p: row.top_p,
     n: row.n,
     stop_tokens: row.stop_tokens,
-    embedding_model: row.embedding_model,
     frequency_penalty: row.frequency_penalty,
     presence_penalty: row.presence_penalty,
     max_completion_tokens: row.max_completion_tokens,
@@ -800,13 +833,13 @@ export async function getAllOpenAICompatibleProviderConfigs(includeDeleted = fal
   
   const query = includeDeleted
     ? `SELECT id, name, base_url, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model,
+            stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
      FROM provider_config_openaicompatible ORDER BY name`
     : `SELECT id, name, base_url, api_key, model, max_tokens, temperature, top_p, n,
-            stop_tokens, embedding_model,
+            stop_tokens,
             frequency_penalty, presence_penalty, max_completion_tokens,
             seed, response_format,
             top_k, top_a, min_p, repetition_penalty, sampling_preset_name, extra_params, deleted_at
@@ -828,7 +861,6 @@ export async function getAllOpenAICompatibleProviderConfigs(includeDeleted = fal
       top_p: row.top_p,
       n: row.n,
       stop_tokens: row.stop_tokens,
-      embedding_model: row.embedding_model,
       frequency_penalty: row.frequency_penalty,
       presence_penalty: row.presence_penalty,
       max_completion_tokens: row.max_completion_tokens,
@@ -854,7 +886,7 @@ export async function updateOpenAICompatibleProviderConfig(config: OpenAICompati
     const [result] = await tx.executeSql(
       `UPDATE provider_config_openaicompatible
        SET name = ?, base_url = ?, api_key = ?, model = ?, max_tokens = ?,
-           temperature = ?, top_p = ?, n = ?, stop_tokens = ?, embedding_model = ?,
+           temperature = ?, top_p = ?, n = ?, stop_tokens = ?,
            frequency_penalty = ?, presence_penalty = ?, max_completion_tokens = ?,
            seed = ?, response_format = ?,
            top_k = ?, top_a = ?, min_p = ?, repetition_penalty = ?, sampling_preset_name = ?, extra_params = ?
@@ -869,7 +901,6 @@ export async function updateOpenAICompatibleProviderConfig(config: OpenAICompati
         config.top_p,
         config.n,
         config.stop_tokens,
-        config.embedding_model,
         config.frequency_penalty,
         config.presence_penalty,
         config.max_completion_tokens,
@@ -895,24 +926,7 @@ export async function updateOpenAICompatibleProviderConfig(config: OpenAICompati
  * Check if an OpenAI Compatible provider config is in use by any modules
  */
 export async function isOpenAICompatibleProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const tables = [
-    'backend_configs',
-    'cognition_configs',
-    'movement_configs',
-    'rag_configs',
-    'stt_configs',
-    'tts_configs',
-    'vision_configs',
-  ];
-  for (const table of tables) {
-    const [results] = await db.executeSql(
-      `SELECT COUNT(*) as count FROM ${table} WHERE provider = 'openaicompatible' AND provider_config_id = ? AND deleted_at IS NULL`,
-      [id]
-    );
-    if (results.rows.item(0).count > 0) return true;
-  }
-  return false;
+  return isProviderConfigInUse('openaicompatible', id);
 }
 
 export async function deleteOpenAICompatibleProviderConfig(id: number, permanent = false): Promise<void> {
@@ -1099,16 +1113,7 @@ export async function updateHarmonySpeechProviderConfig(config: HarmonySpeechPro
  * Check if a HarmonySpeech provider config is in use by any modules
  */
 export async function isHarmonySpeechProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const tables = ['module_backend_configs', 'module_cognition_configs', 'module_movement_configs', 'module_rag_configs', 'module_stt_configs', 'module_tts_configs'];
-  for (const table of tables) {
-    const [results] = await db.executeSql(
-      `SELECT COUNT(*) as count FROM ${table} WHERE provider = 'harmonyspeech' AND provider_config_id = ? AND deleted_at IS NULL`,
-      [id]
-    );
-    if (results.rows.item(0).count > 0) return true;
-  }
-  return false;
+  return isProviderConfigInUse('harmonyspeech', id);
 }
 
 export async function deleteHarmonySpeechProviderConfig(id: number, permanent = false): Promise<void> {
@@ -1300,16 +1305,7 @@ export async function updateElevenLabsProviderConfig(config: ElevenLabsProviderC
  * Check if an ElevenLabs provider config is in use by any modules
  */
 export async function isElevenLabsProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const tables = ['module_backend_configs', 'module_cognition_configs', 'module_movement_configs', 'module_rag_configs', 'module_stt_configs', 'module_tts_configs'];
-  for (const table of tables) {
-    const [results] = await db.executeSql(
-      `SELECT COUNT(*) as count FROM ${table} WHERE provider = 'elevenlabs' AND provider_config_id = ? AND deleted_at IS NULL`,
-      [id]
-    );
-    if (results.rows.item(0).count > 0) return true;
-  }
-  return false;
+  return isProviderConfigInUse('elevenlabs', id);
 }
 
 export async function deleteElevenLabsProviderConfig(id: number, permanent = false): Promise<void> {
@@ -1457,16 +1453,7 @@ export async function updateKindroidProviderConfig(config: KindroidProviderConfi
  * Check if a Kindroid provider config is in use by any modules
  */
 export async function isKindroidProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const tables = ['module_backend_configs', 'module_cognition_configs', 'module_movement_configs', 'module_rag_configs', 'module_stt_configs', 'module_tts_configs'];
-  for (const table of tables) {
-    const [results] = await db.executeSql(
-      `SELECT COUNT(*) as count FROM ${table} WHERE provider = 'kindroid' AND provider_config_id = ? AND deleted_at IS NULL`,
-      [id]
-    );
-    if (results.rows.item(0).count > 0) return true;
-  }
-  return false;
+  return isProviderConfigInUse('kindroid', id);
 }
 
 export async function deleteKindroidProviderConfig(id: number, permanent = false): Promise<void> {
@@ -1619,16 +1606,7 @@ export async function updateKajiwotoProviderConfig(config: KajiwotoProviderConfi
  * Check if a Kajiwoto provider config is in use by any modules
  */
 export async function isKajiwotoProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const tables = ['module_backend_configs', 'module_cognition_configs', 'module_movement_configs', 'module_rag_configs', 'module_stt_configs', 'module_tts_configs'];
-  for (const table of tables) {
-    const [results] = await db.executeSql(
-      `SELECT COUNT(*) as count FROM ${table} WHERE provider = 'kajiwoto' AND provider_config_id = ? AND deleted_at IS NULL`,
-      [id]
-    );
-    if (results.rows.item(0).count > 0) return true;
-  }
-  return false;
+  return isProviderConfigInUse('kajiwoto', id);
 }
 
 export async function deleteKajiwotoProviderConfig(id: number, permanent = false): Promise<void> {
@@ -1778,16 +1756,7 @@ export async function updateCharacterAIProviderConfig(config: CharacterAIProvide
  * Check if a CharacterAI provider config is in use by any modules
  */
 export async function isCharacterAIProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const tables = ['module_backend_configs', 'module_cognition_configs', 'module_movement_configs', 'module_rag_configs', 'module_stt_configs', 'module_tts_configs'];
-  for (const table of tables) {
-    const [results] = await db.executeSql(
-      `SELECT COUNT(*) as count FROM ${table} WHERE provider = 'characterai' AND provider_config_id = ? AND deleted_at IS NULL`,
-      [id]
-    );
-    if (results.rows.item(0).count > 0) return true;
-  }
-  return false;
+  return isProviderConfigInUse('characterai', id);
 }
 
 export async function deleteCharacterAIProviderConfig(id: number, permanent = false): Promise<void> {
@@ -1829,8 +1798,8 @@ export async function createLocalAIProviderConfig(
     db.transaction(
       (tx) => {
         tx.executeSql(
-      'INSERT INTO provider_config_localai (name, embedding_model) VALUES (?, ?)',
-      [config.name, config.embedding_model],
+      'INSERT INTO provider_config_localai (name, model) VALUES (?, ?)',
+      [config.name, config.model],
           (_, result) => {
             resolve(result.insertId!);
           },
@@ -1849,8 +1818,8 @@ export async function getLocalAIProviderConfig(id: number, includeDeleted = fals
   const db = getDatabase();
   
   const query = includeDeleted
-    ? 'SELECT id, name, embedding_model, deleted_at FROM provider_config_localai WHERE id = ?'
-    : 'SELECT id, name, embedding_model, deleted_at FROM provider_config_localai WHERE id = ? AND deleted_at IS NULL';
+    ? 'SELECT id, name, model, deleted_at FROM provider_config_localai WHERE id = ?'
+    : 'SELECT id, name, model, deleted_at FROM provider_config_localai WHERE id = ? AND deleted_at IS NULL';
 
   const [results] = await db.executeSql(query, [id]);
   
@@ -1862,7 +1831,7 @@ export async function getLocalAIProviderConfig(id: number, includeDeleted = fals
   return {
     id: row.id,
     name: row.name,
-    embedding_model: row.embedding_model,
+    model: row.model,
     deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
   };
 }
@@ -1871,8 +1840,8 @@ export async function getLocalAIProviderConfigByName(name: string, includeDelete
   const db = getDatabase();
   
   const query = includeDeleted
-    ? 'SELECT id, name, embedding_model, deleted_at FROM provider_config_localai WHERE name = ?'
-    : 'SELECT id, name, embedding_model, deleted_at FROM provider_config_localai WHERE name = ? AND deleted_at IS NULL';
+    ? 'SELECT id, name, model, deleted_at FROM provider_config_localai WHERE name = ?'
+    : 'SELECT id, name, model, deleted_at FROM provider_config_localai WHERE name = ? AND deleted_at IS NULL';
 
   const [results] = await db.executeSql(query, [name]);
   
@@ -1884,7 +1853,7 @@ export async function getLocalAIProviderConfigByName(name: string, includeDelete
   return {
     id: row.id,
     name: row.name,
-    embedding_model: row.embedding_model,
+    model: row.model,
     deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
   };
 }
@@ -1893,8 +1862,8 @@ export async function getAllLocalAIProviderConfigs(includeDeleted = false): Prom
   const db = getDatabase();
   
   const query = includeDeleted
-    ? 'SELECT id, name, embedding_model, deleted_at FROM provider_config_localai ORDER BY name'
-    : 'SELECT id, name, embedding_model, deleted_at FROM provider_config_localai WHERE deleted_at IS NULL ORDER BY name';
+    ? 'SELECT id, name, model, deleted_at FROM provider_config_localai ORDER BY name'
+    : 'SELECT id, name, model, deleted_at FROM provider_config_localai WHERE deleted_at IS NULL ORDER BY name';
 
   const [results] = await db.executeSql(query);
   
@@ -1904,7 +1873,7 @@ export async function getAllLocalAIProviderConfigs(includeDeleted = false): Prom
     configs.push({
       id: row.id,
       name: row.name,
-      embedding_model: row.embedding_model,
+      model: row.model,
       deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
     });
   }
@@ -1917,8 +1886,8 @@ export async function updateLocalAIProviderConfig(config: LocalAIProviderConfig)
   
   return withTransaction(db, async (tx) => {
     const [result] = await tx.executeSql(
-      'UPDATE provider_config_localai SET name = ?, embedding_model = ? WHERE id = ?',
-      [config.name, config.embedding_model, config.id]
+      'UPDATE provider_config_localai SET name = ?, model = ? WHERE id = ?',
+      [config.name, config.model, config.id]
     );
     
     if (result.rowsAffected === 0) {
@@ -1931,16 +1900,7 @@ export async function updateLocalAIProviderConfig(config: LocalAIProviderConfig)
  * Check if a LocalAI provider config is in use by any modules
  */
 export async function isLocalAIProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const tables = ['module_backend_configs', 'module_cognition_configs', 'module_movement_configs', 'module_rag_configs', 'module_stt_configs', 'module_tts_configs'];
-  for (const table of tables) {
-    const [results] = await db.executeSql(
-      `SELECT COUNT(*) as count FROM ${table} WHERE provider = 'localai' AND provider_config_id = ? AND deleted_at IS NULL`,
-      [id]
-    );
-    if (results.rows.item(0).count > 0) return true;
-  }
-  return false;
+  return isProviderConfigInUse('localai', id);
 }
 
 export async function deleteLocalAIProviderConfig(id: number, permanent = false): Promise<void> {
@@ -2084,16 +2044,7 @@ export async function updateMistralProviderConfig(config: MistralProviderConfig)
  * Check if a Mistral provider config is in use by any modules
  */
 export async function isMistralProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const tables = ['module_backend_configs', 'module_cognition_configs', 'module_movement_configs', 'module_rag_configs', 'module_stt_configs', 'module_tts_configs'];
-  for (const table of tables) {
-    const [results] = await db.executeSql(
-      `SELECT COUNT(*) as count FROM ${table} WHERE provider = 'mistral' AND provider_config_id = ? AND deleted_at IS NULL`,
-      [id]
-    );
-    if (results.rows.item(0).count > 0) return true;
-  }
-  return false;
+  return isProviderConfigInUse('mistral', id);
 }
 
 export async function deleteMistralProviderConfig(id: number, permanent = false): Promise<void> {
@@ -2135,8 +2086,8 @@ export async function createOllamaProviderConfig(
     db.transaction(
       (tx) => {
         tx.executeSql(
-      'INSERT INTO provider_config_ollama (name, base_url, embedding_model) VALUES (?, ?, ?)',
-      [config.name, config.base_url, config.embedding_model],
+      'INSERT INTO provider_config_ollama (name, base_url, model) VALUES (?, ?, ?)',
+      [config.name, config.base_url, config.model],
           (_, result) => {
             resolve(result.insertId!);
           },
@@ -2155,8 +2106,8 @@ export async function getOllamaProviderConfig(id: number, includeDeleted = false
   const db = getDatabase();
   
   const query = includeDeleted
-    ? 'SELECT id, name, base_url, embedding_model, deleted_at FROM provider_config_ollama WHERE id = ?'
-    : 'SELECT id, name, base_url, embedding_model, deleted_at FROM provider_config_ollama WHERE id = ? AND deleted_at IS NULL';
+    ? 'SELECT id, name, base_url, model, deleted_at FROM provider_config_ollama WHERE id = ?'
+    : 'SELECT id, name, base_url, model, deleted_at FROM provider_config_ollama WHERE id = ? AND deleted_at IS NULL';
 
   const [results] = await db.executeSql(query, [id]);
   
@@ -2169,7 +2120,7 @@ export async function getOllamaProviderConfig(id: number, includeDeleted = false
     id: row.id,
     name: row.name,
     base_url: row.base_url,
-    embedding_model: row.embedding_model,
+    model: row.model,
     deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
   };
 }
@@ -2178,8 +2129,8 @@ export async function getOllamaProviderConfigByName(name: string, includeDeleted
   const db = getDatabase();
   
   const query = includeDeleted
-    ? 'SELECT id, name, base_url, embedding_model, deleted_at FROM provider_config_ollama WHERE name = ?'
-    : 'SELECT id, name, base_url, embedding_model, deleted_at FROM provider_config_ollama WHERE name = ? AND deleted_at IS NULL';
+    ? 'SELECT id, name, base_url, model, deleted_at FROM provider_config_ollama WHERE name = ?'
+    : 'SELECT id, name, base_url, model, deleted_at FROM provider_config_ollama WHERE name = ? AND deleted_at IS NULL';
 
   const [results] = await db.executeSql(query, [name]);
   
@@ -2192,7 +2143,7 @@ export async function getOllamaProviderConfigByName(name: string, includeDeleted
     id: row.id,
     name: row.name,
     base_url: row.base_url,
-    embedding_model: row.embedding_model,
+    model: row.model,
     deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
   };
 }
@@ -2201,8 +2152,8 @@ export async function getAllOllamaProviderConfigs(includeDeleted = false): Promi
   const db = getDatabase();
   
   const query = includeDeleted
-    ? 'SELECT id, name, base_url, embedding_model, deleted_at FROM provider_config_ollama ORDER BY name'
-    : 'SELECT id, name, base_url, embedding_model, deleted_at FROM provider_config_ollama WHERE deleted_at IS NULL ORDER BY name';
+    ? 'SELECT id, name, base_url, model, deleted_at FROM provider_config_ollama ORDER BY name'
+    : 'SELECT id, name, base_url, model, deleted_at FROM provider_config_ollama WHERE deleted_at IS NULL ORDER BY name';
 
   const [results] = await db.executeSql(query);
   
@@ -2213,7 +2164,7 @@ export async function getAllOllamaProviderConfigs(includeDeleted = false): Promi
       id: row.id,
       name: row.name,
       base_url: row.base_url,
-      embedding_model: row.embedding_model,
+      model: row.model,
       deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
     });
   }
@@ -2226,8 +2177,8 @@ export async function updateOllamaProviderConfig(config: OllamaProviderConfig): 
   
   return withTransaction(db, async (tx) => {
     const [result] = await tx.executeSql(
-      'UPDATE provider_config_ollama SET name = ?, base_url = ?, embedding_model = ? WHERE id = ?',
-      [config.name, config.base_url, config.embedding_model, config.id]
+      'UPDATE provider_config_ollama SET name = ?, base_url = ?, model = ? WHERE id = ?',
+      [config.name, config.base_url, config.model, config.id]
     );
     
     if (result.rowsAffected === 0) {
@@ -2240,16 +2191,7 @@ export async function updateOllamaProviderConfig(config: OllamaProviderConfig): 
  * Check if an Ollama provider config is in use by any modules
  */
 export async function isOllamaProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const tables = ['module_backend_configs', 'module_cognition_configs', 'module_movement_configs', 'module_rag_configs', 'module_stt_configs', 'module_tts_configs'];
-  for (const table of tables) {
-    const [results] = await db.executeSql(
-      `SELECT COUNT(*) as count FROM ${table} WHERE provider = 'ollama' AND provider_config_id = ? AND deleted_at IS NULL`,
-      [id]
-    );
-    if (results.rows.item(0).count > 0) return true;
-  }
-  return false;
+  return isProviderConfigInUse('ollama', id);
 }
 
 export async function deleteOllamaProviderConfig(id: number, permanent = false): Promise<void> {
@@ -2402,12 +2344,7 @@ export async function updateComfyUIProviderConfig(config: ComfyUIProviderConfig)
  * Check if a ComfyUI provider config is in use by any imagination module configs
  */
 export async function isComfyUIProviderConfigInUse(id: number): Promise<boolean> {
-  const db = getDatabase();
-  const [results] = await db.executeSql(
-    `SELECT COUNT(*) as count FROM imagination_configs WHERE provider = 'comfyui' AND provider_config_id = ? AND deleted_at IS NULL`,
-    [id]
-  );
-  return results.rows.item(0).count > 0;
+  return isProviderConfigInUse('comfyui', id);
 }
 
 export async function deleteComfyUIProviderConfig(id: number, permanent = false): Promise<void> {
@@ -2431,6 +2368,712 @@ export async function deleteComfyUIProviderConfig(id: number, permanent = false)
       );
       if (result.rowsAffected === 0) {
         throw new Error(`ComfyUI provider config not found: ${id}`);
+      }
+    }
+  });
+}
+
+// ============================================================================
+// XAI Provider Config Operations
+// ============================================================================
+
+export async function createXAIProviderConfig(
+  config: Omit<XAIProviderConfig, 'id' | 'deleted_at'>
+): Promise<number> {
+  const db = getDatabase();
+  
+  return new Promise<number>((resolve, reject) => {
+    db.transaction(
+      (tx) => {
+        tx.executeSql(
+      `INSERT INTO provider_config_xai (
+        name, api_key, model, max_tokens, max_completion_tokens, temperature, top_p,
+        frequency_penalty, presence_penalty, n, stop_tokens, seed, response_format,
+        reasoning_effort, sampling_preset_name, extra_params, image_aspect_ratio, image_resolution
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        config.name,
+        config.api_key,
+        config.model,
+        config.max_tokens,
+        config.max_completion_tokens,
+        config.temperature,
+        config.top_p,
+        config.frequency_penalty,
+        config.presence_penalty,
+        config.n,
+        config.stop_tokens,
+        config.seed,
+        config.response_format,
+        config.reasoning_effort,
+        config.sampling_preset_name,
+        config.extra_params,
+        config.image_aspect_ratio,
+        config.image_resolution,
+      ],
+          (_, result) => {
+            resolve(result.insertId!);
+          },
+          (_, error) => {
+            reject(error);
+            return false;
+          }
+        );
+      },
+      (error) => reject(error)
+    );
+  });
+}
+
+export async function getXAIProviderConfig(id: number, includeDeleted = false): Promise<XAIProviderConfig | null> {
+  const db = getDatabase();
+  
+  const query = includeDeleted
+    ? `SELECT id, name, api_key, model, max_tokens, max_completion_tokens, temperature, top_p,
+            frequency_penalty, presence_penalty, n, stop_tokens, seed, response_format,
+            reasoning_effort, sampling_preset_name, extra_params, image_aspect_ratio, image_resolution, deleted_at
+     FROM provider_config_xai WHERE id = ?`
+    : `SELECT id, name, api_key, model, max_tokens, max_completion_tokens, temperature, top_p,
+            frequency_penalty, presence_penalty, n, stop_tokens, seed, response_format,
+            reasoning_effort, sampling_preset_name, extra_params, image_aspect_ratio, image_resolution, deleted_at
+     FROM provider_config_xai WHERE id = ? AND deleted_at IS NULL`;
+
+  const [results] = await db.executeSql(query, [id]);
+  
+  if (results.rows.length === 0) {
+    return null;
+  }
+  
+  const row = results.rows.item(0);
+  return {
+    id: row.id,
+    name: row.name,
+    api_key: row.api_key,
+    model: row.model,
+    max_tokens: row.max_tokens,
+    max_completion_tokens: row.max_completion_tokens,
+    temperature: row.temperature,
+    top_p: row.top_p,
+    frequency_penalty: row.frequency_penalty,
+    presence_penalty: row.presence_penalty,
+    n: row.n,
+    stop_tokens: row.stop_tokens,
+    seed: row.seed,
+    response_format: row.response_format,
+    reasoning_effort: row.reasoning_effort,
+    sampling_preset_name: row.sampling_preset_name,
+    extra_params: row.extra_params,
+    image_aspect_ratio: row.image_aspect_ratio,
+    image_resolution: row.image_resolution,
+    deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
+  };
+}
+
+export async function getXAIProviderConfigByName(name: string, includeDeleted = false): Promise<XAIProviderConfig | null> {
+  const db = getDatabase();
+  
+  const query = includeDeleted
+    ? `SELECT id, name, api_key, model, max_tokens, max_completion_tokens, temperature, top_p,
+            frequency_penalty, presence_penalty, n, stop_tokens, seed, response_format,
+            reasoning_effort, sampling_preset_name, extra_params, image_aspect_ratio, image_resolution, deleted_at
+     FROM provider_config_xai WHERE name = ?`
+    : `SELECT id, name, api_key, model, max_tokens, max_completion_tokens, temperature, top_p,
+            frequency_penalty, presence_penalty, n, stop_tokens, seed, response_format,
+            reasoning_effort, sampling_preset_name, extra_params, image_aspect_ratio, image_resolution, deleted_at
+     FROM provider_config_xai WHERE name = ? AND deleted_at IS NULL`;
+
+  const [results] = await db.executeSql(query, [name]);
+  
+  if (results.rows.length === 0) {
+    return null;
+  }
+  
+  const row = results.rows.item(0);
+  return {
+    id: row.id,
+    name: row.name,
+    api_key: row.api_key,
+    model: row.model,
+    max_tokens: row.max_tokens,
+    max_completion_tokens: row.max_completion_tokens,
+    temperature: row.temperature,
+    top_p: row.top_p,
+    frequency_penalty: row.frequency_penalty,
+    presence_penalty: row.presence_penalty,
+    n: row.n,
+    stop_tokens: row.stop_tokens,
+    seed: row.seed,
+    response_format: row.response_format,
+    reasoning_effort: row.reasoning_effort,
+    sampling_preset_name: row.sampling_preset_name,
+    extra_params: row.extra_params,
+    image_aspect_ratio: row.image_aspect_ratio,
+    image_resolution: row.image_resolution,
+    deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
+  };
+}
+
+export async function getAllXAIProviderConfigs(includeDeleted = false): Promise<XAIProviderConfig[]> {
+  const db = getDatabase();
+  
+  const query = includeDeleted
+    ? `SELECT id, name, api_key, model, max_tokens, max_completion_tokens, temperature, top_p,
+            frequency_penalty, presence_penalty, n, stop_tokens, seed, response_format,
+            reasoning_effort, sampling_preset_name, extra_params, image_aspect_ratio, image_resolution, deleted_at
+     FROM provider_config_xai ORDER BY name`
+    : `SELECT id, name, api_key, model, max_tokens, max_completion_tokens, temperature, top_p,
+            frequency_penalty, presence_penalty, n, stop_tokens, seed, response_format,
+            reasoning_effort, sampling_preset_name, extra_params, image_aspect_ratio, image_resolution, deleted_at
+     FROM provider_config_xai WHERE deleted_at IS NULL ORDER BY name`;
+
+  const [results] = await db.executeSql(query);
+  
+  const configs: XAIProviderConfig[] = [];
+  for (let i = 0; i < results.rows.length; i++) {
+    const row = results.rows.item(i);
+    configs.push({
+      id: row.id,
+      name: row.name,
+      api_key: row.api_key,
+      model: row.model,
+      max_tokens: row.max_tokens,
+      max_completion_tokens: row.max_completion_tokens,
+      temperature: row.temperature,
+      top_p: row.top_p,
+      frequency_penalty: row.frequency_penalty,
+      presence_penalty: row.presence_penalty,
+      n: row.n,
+      stop_tokens: row.stop_tokens,
+      seed: row.seed,
+      response_format: row.response_format,
+      reasoning_effort: row.reasoning_effort,
+      sampling_preset_name: row.sampling_preset_name,
+      extra_params: row.extra_params,
+      image_aspect_ratio: row.image_aspect_ratio,
+      image_resolution: row.image_resolution,
+      deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
+    });
+  }
+  
+  return configs;
+}
+
+export async function updateXAIProviderConfig(config: XAIProviderConfig): Promise<void> {
+  const db = getDatabase();
+  
+  return withTransaction(db, async (tx) => {
+    const [result] = await tx.executeSql(
+      `UPDATE provider_config_xai
+       SET name = ?, api_key = ?, model = ?, max_tokens = ?, max_completion_tokens = ?,
+           temperature = ?, top_p = ?,
+           frequency_penalty = ?, presence_penalty = ?, n = ?, stop_tokens = ?,
+           seed = ?, response_format = ?, reasoning_effort = ?,
+           sampling_preset_name = ?, extra_params = ?, image_aspect_ratio = ?, image_resolution = ?
+       WHERE id = ?`,
+      [
+        config.name,
+        config.api_key,
+        config.model,
+        config.max_tokens,
+        config.max_completion_tokens,
+        config.temperature,
+        config.top_p,
+        config.frequency_penalty,
+        config.presence_penalty,
+        config.n,
+        config.stop_tokens,
+        config.seed,
+        config.response_format,
+        config.reasoning_effort,
+        config.sampling_preset_name,
+        config.extra_params,
+        config.image_aspect_ratio,
+        config.image_resolution,
+        config.id,
+      ]
+    );
+    
+    if (result.rowsAffected === 0) {
+      throw new Error(`XAI provider config not found: ${config.id}`);
+    }
+  });
+}
+
+/**
+ * Check if an XAI provider config is in use by any modules
+ */
+export async function isXAIProviderConfigInUse(id: number): Promise<boolean> {
+  return isProviderConfigInUse('xai', id);
+}
+
+export async function deleteXAIProviderConfig(id: number, permanent = false): Promise<void> {
+  const db = getDatabase();
+  
+  if (!permanent && await isXAIProviderConfigInUse(id)) {
+    throw new Error(`XAI provider config ${id} is in use and cannot be soft deleted`);
+  }
+
+  return withTransaction(db, async (tx) => {
+    if (permanent) {
+      const [result] = await tx.executeSql('DELETE FROM provider_config_xai WHERE id = ?', [id]);
+      if (result.rowsAffected === 0) {
+        throw new Error(`XAI provider config not found: ${id}`);
+      }
+    } else {
+      const now = new Date().toISOString();
+      const [result] = await tx.executeSql(
+        'UPDATE provider_config_xai SET deleted_at = ? WHERE id = ?',
+        [now, id]
+      );
+      if (result.rowsAffected === 0) {
+        throw new Error(`XAI provider config not found: ${id}`);
+      }
+    }
+  });
+}
+
+// ============================================================================
+// Google Provider Config Operations
+// ============================================================================
+
+export async function createGoogleProviderConfig(
+  config: Omit<GoogleProviderConfig, 'id' | 'deleted_at'>
+): Promise<number> {
+  const db = getDatabase();
+  
+  return new Promise<number>((resolve, reject) => {
+    db.transaction(
+      (tx) => {
+        tx.executeSql(
+      `INSERT INTO provider_config_google (
+        name, api_key, model, max_output_tokens, temperature, top_p, top_k,
+        stop_tokens, seed, response_mime_type,
+        sampling_preset_name, extra_params, number_of_images, aspect_ratio
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        config.name,
+        config.api_key,
+        config.model,
+        config.max_output_tokens,
+        config.temperature,
+        config.top_p,
+        config.top_k,
+        config.stop_tokens,
+        config.seed,
+        config.response_mime_type,
+        config.sampling_preset_name,
+        config.extra_params,
+        config.number_of_images,
+        config.aspect_ratio,
+      ],
+          (_, result) => {
+            resolve(result.insertId!);
+          },
+          (_, error) => {
+            reject(error);
+            return false;
+          }
+        );
+      },
+      (error) => reject(error)
+    );
+  });
+}
+
+export async function getGoogleProviderConfig(id: number, includeDeleted = false): Promise<GoogleProviderConfig | null> {
+  const db = getDatabase();
+  
+  const query = includeDeleted
+    ? `SELECT id, name, api_key, model, max_output_tokens, temperature, top_p, top_k,
+            stop_tokens, seed, response_mime_type,
+            sampling_preset_name, extra_params, number_of_images, aspect_ratio, deleted_at
+     FROM provider_config_google WHERE id = ?`
+    : `SELECT id, name, api_key, model, max_output_tokens, temperature, top_p, top_k,
+            stop_tokens, seed, response_mime_type,
+            sampling_preset_name, extra_params, number_of_images, aspect_ratio, deleted_at
+     FROM provider_config_google WHERE id = ? AND deleted_at IS NULL`;
+
+  const [results] = await db.executeSql(query, [id]);
+  
+  if (results.rows.length === 0) {
+    return null;
+  }
+  
+  const row = results.rows.item(0);
+  return {
+    id: row.id,
+    name: row.name,
+    api_key: row.api_key,
+    model: row.model,
+    max_output_tokens: row.max_output_tokens,
+    temperature: row.temperature,
+    top_p: row.top_p,
+    top_k: row.top_k,
+    stop_tokens: row.stop_tokens,
+    seed: row.seed,
+    response_mime_type: row.response_mime_type,
+    sampling_preset_name: row.sampling_preset_name,
+    extra_params: row.extra_params,
+    number_of_images: row.number_of_images,
+    aspect_ratio: row.aspect_ratio,
+    deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
+  };
+}
+
+export async function getGoogleProviderConfigByName(name: string, includeDeleted = false): Promise<GoogleProviderConfig | null> {
+  const db = getDatabase();
+  
+  const query = includeDeleted
+    ? `SELECT id, name, api_key, model, max_output_tokens, temperature, top_p, top_k,
+            stop_tokens, seed, response_mime_type,
+            sampling_preset_name, extra_params, number_of_images, aspect_ratio, deleted_at
+     FROM provider_config_google WHERE name = ?`
+    : `SELECT id, name, api_key, model, max_output_tokens, temperature, top_p, top_k,
+            stop_tokens, seed, response_mime_type,
+            sampling_preset_name, extra_params, number_of_images, aspect_ratio, deleted_at
+     FROM provider_config_google WHERE name = ? AND deleted_at IS NULL`;
+
+  const [results] = await db.executeSql(query, [name]);
+  
+  if (results.rows.length === 0) {
+    return null;
+  }
+  
+  const row = results.rows.item(0);
+  return {
+    id: row.id,
+    name: row.name,
+    api_key: row.api_key,
+    model: row.model,
+    max_output_tokens: row.max_output_tokens,
+    temperature: row.temperature,
+    top_p: row.top_p,
+    top_k: row.top_k,
+    stop_tokens: row.stop_tokens,
+    seed: row.seed,
+    response_mime_type: row.response_mime_type,
+    sampling_preset_name: row.sampling_preset_name,
+    extra_params: row.extra_params,
+    number_of_images: row.number_of_images,
+    aspect_ratio: row.aspect_ratio,
+    deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
+  };
+}
+
+export async function getAllGoogleProviderConfigs(includeDeleted = false): Promise<GoogleProviderConfig[]> {
+  const db = getDatabase();
+  
+  const query = includeDeleted
+    ? `SELECT id, name, api_key, model, max_output_tokens, temperature, top_p, top_k,
+            stop_tokens, seed, response_mime_type,
+            sampling_preset_name, extra_params, number_of_images, aspect_ratio, deleted_at
+     FROM provider_config_google ORDER BY name`
+    : `SELECT id, name, api_key, model, max_output_tokens, temperature, top_p, top_k,
+            stop_tokens, seed, response_mime_type,
+            sampling_preset_name, extra_params, number_of_images, aspect_ratio, deleted_at
+     FROM provider_config_google WHERE deleted_at IS NULL ORDER BY name`;
+
+  const [results] = await db.executeSql(query);
+  
+  const configs: GoogleProviderConfig[] = [];
+  for (let i = 0; i < results.rows.length; i++) {
+    const row = results.rows.item(i);
+    configs.push({
+      id: row.id,
+      name: row.name,
+      api_key: row.api_key,
+      model: row.model,
+      max_output_tokens: row.max_output_tokens,
+      temperature: row.temperature,
+      top_p: row.top_p,
+      top_k: row.top_k,
+      stop_tokens: row.stop_tokens,
+      seed: row.seed,
+      response_mime_type: row.response_mime_type,
+      sampling_preset_name: row.sampling_preset_name,
+      extra_params: row.extra_params,
+      number_of_images: row.number_of_images,
+      aspect_ratio: row.aspect_ratio,
+      deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
+    });
+  }
+  
+  return configs;
+}
+
+export async function updateGoogleProviderConfig(config: GoogleProviderConfig): Promise<void> {
+  const db = getDatabase();
+  
+  return withTransaction(db, async (tx) => {
+    const [result] = await tx.executeSql(
+      `UPDATE provider_config_google
+       SET name = ?, api_key = ?, model = ?, max_output_tokens = ?, temperature = ?,
+           top_p = ?, top_k = ?, stop_tokens = ?, seed = ?, response_mime_type = ?,
+           sampling_preset_name = ?, extra_params = ?, number_of_images = ?, aspect_ratio = ?
+       WHERE id = ?`,
+      [
+        config.name,
+        config.api_key,
+        config.model,
+        config.max_output_tokens,
+        config.temperature,
+        config.top_p,
+        config.top_k,
+        config.stop_tokens,
+        config.seed,
+        config.response_mime_type,
+        config.sampling_preset_name,
+        config.extra_params,
+        config.number_of_images,
+        config.aspect_ratio,
+        config.id,
+      ]
+    );
+    
+    if (result.rowsAffected === 0) {
+      throw new Error(`Google provider config not found: ${config.id}`);
+    }
+  });
+}
+
+/**
+ * Check if a Google provider config is in use by any modules
+ */
+export async function isGoogleProviderConfigInUse(id: number): Promise<boolean> {
+  return isProviderConfigInUse('google', id);
+}
+
+export async function deleteGoogleProviderConfig(id: number, permanent = false): Promise<void> {
+  const db = getDatabase();
+  
+  if (!permanent && await isGoogleProviderConfigInUse(id)) {
+    throw new Error(`Google provider config ${id} is in use and cannot be soft deleted`);
+  }
+
+  return withTransaction(db, async (tx) => {
+    if (permanent) {
+      const [result] = await tx.executeSql('DELETE FROM provider_config_google WHERE id = ?', [id]);
+      if (result.rowsAffected === 0) {
+        throw new Error(`Google provider config not found: ${id}`);
+      }
+    } else {
+      const now = new Date().toISOString();
+      const [result] = await tx.executeSql(
+        'UPDATE provider_config_google SET deleted_at = ? WHERE id = ?',
+        [now, id]
+      );
+      if (result.rowsAffected === 0) {
+        throw new Error(`Google provider config not found: ${id}`);
+      }
+    }
+  });
+}
+
+// ============================================================================
+// Anthropic Provider Config Operations
+// ============================================================================
+
+export async function createAnthropicProviderConfig(
+  config: Omit<AnthropicProviderConfig, 'id' | 'deleted_at'>
+): Promise<number> {
+  const db = getDatabase();
+  
+  return new Promise<number>((resolve, reject) => {
+    db.transaction(
+      (tx) => {
+        tx.executeSql(
+      `INSERT INTO provider_config_anthropic (
+        name, api_key, model, max_tokens, temperature, top_p, top_k,
+        stop_sequences, sampling_preset_name, extra_params
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        config.name,
+        config.api_key,
+        config.model,
+        config.max_tokens,
+        config.temperature,
+        config.top_p,
+        config.top_k,
+        config.stop_sequences,
+        config.sampling_preset_name,
+        config.extra_params,
+      ],
+          (_, result) => {
+            resolve(result.insertId!);
+          },
+          (_, error) => {
+            reject(error);
+            return false;
+          }
+        );
+      },
+      (error) => reject(error)
+    );
+  });
+}
+
+export async function getAnthropicProviderConfig(id: number, includeDeleted = false): Promise<AnthropicProviderConfig | null> {
+  const db = getDatabase();
+  
+  const query = includeDeleted
+    ? `SELECT id, name, api_key, model, max_tokens, temperature, top_p, top_k,
+            stop_sequences, sampling_preset_name, extra_params, deleted_at
+     FROM provider_config_anthropic WHERE id = ?`
+    : `SELECT id, name, api_key, model, max_tokens, temperature, top_p, top_k,
+            stop_sequences, sampling_preset_name, extra_params, deleted_at
+     FROM provider_config_anthropic WHERE id = ? AND deleted_at IS NULL`;
+
+  const [results] = await db.executeSql(query, [id]);
+  
+  if (results.rows.length === 0) {
+    return null;
+  }
+  
+  const row = results.rows.item(0);
+  return {
+    id: row.id,
+    name: row.name,
+    api_key: row.api_key,
+    model: row.model,
+    max_tokens: row.max_tokens,
+    temperature: row.temperature,
+    top_p: row.top_p,
+    top_k: row.top_k,
+    stop_sequences: row.stop_sequences,
+    sampling_preset_name: row.sampling_preset_name,
+    extra_params: row.extra_params,
+    deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
+  };
+}
+
+export async function getAnthropicProviderConfigByName(name: string, includeDeleted = false): Promise<AnthropicProviderConfig | null> {
+  const db = getDatabase();
+  
+  const query = includeDeleted
+    ? `SELECT id, name, api_key, model, max_tokens, temperature, top_p, top_k,
+            stop_sequences, sampling_preset_name, extra_params, deleted_at
+     FROM provider_config_anthropic WHERE name = ?`
+    : `SELECT id, name, api_key, model, max_tokens, temperature, top_p, top_k,
+            stop_sequences, sampling_preset_name, extra_params, deleted_at
+     FROM provider_config_anthropic WHERE name = ? AND deleted_at IS NULL`;
+
+  const [results] = await db.executeSql(query, [name]);
+  
+  if (results.rows.length === 0) {
+    return null;
+  }
+  
+  const row = results.rows.item(0);
+  return {
+    id: row.id,
+    name: row.name,
+    api_key: row.api_key,
+    model: row.model,
+    max_tokens: row.max_tokens,
+    temperature: row.temperature,
+    top_p: row.top_p,
+    top_k: row.top_k,
+    stop_sequences: row.stop_sequences,
+    sampling_preset_name: row.sampling_preset_name,
+    extra_params: row.extra_params,
+    deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
+  };
+}
+
+export async function getAllAnthropicProviderConfigs(includeDeleted = false): Promise<AnthropicProviderConfig[]> {
+  const db = getDatabase();
+  
+  const query = includeDeleted
+    ? `SELECT id, name, api_key, model, max_tokens, temperature, top_p, top_k,
+            stop_sequences, sampling_preset_name, extra_params, deleted_at
+     FROM provider_config_anthropic ORDER BY name`
+    : `SELECT id, name, api_key, model, max_tokens, temperature, top_p, top_k,
+            stop_sequences, sampling_preset_name, extra_params, deleted_at
+     FROM provider_config_anthropic WHERE deleted_at IS NULL ORDER BY name`;
+
+  const [results] = await db.executeSql(query);
+  
+  const configs: AnthropicProviderConfig[] = [];
+  for (let i = 0; i < results.rows.length; i++) {
+    const row = results.rows.item(i);
+    configs.push({
+      id: row.id,
+      name: row.name,
+      api_key: row.api_key,
+      model: row.model,
+      max_tokens: row.max_tokens,
+      temperature: row.temperature,
+      top_p: row.top_p,
+      top_k: row.top_k,
+      stop_sequences: row.stop_sequences,
+      sampling_preset_name: row.sampling_preset_name,
+      extra_params: row.extra_params,
+      deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
+    });
+  }
+  
+  return configs;
+}
+
+export async function updateAnthropicProviderConfig(config: AnthropicProviderConfig): Promise<void> {
+  const db = getDatabase();
+  
+  return withTransaction(db, async (tx) => {
+    const [result] = await tx.executeSql(
+      `UPDATE provider_config_anthropic
+       SET name = ?, api_key = ?, model = ?, max_tokens = ?, temperature = ?,
+           top_p = ?, top_k = ?, stop_sequences = ?,
+           sampling_preset_name = ?, extra_params = ?
+       WHERE id = ?`,
+      [
+        config.name,
+        config.api_key,
+        config.model,
+        config.max_tokens,
+        config.temperature,
+        config.top_p,
+        config.top_k,
+        config.stop_sequences,
+        config.sampling_preset_name,
+        config.extra_params,
+        config.id,
+      ]
+    );
+    
+    if (result.rowsAffected === 0) {
+      throw new Error(`Anthropic provider config not found: ${config.id}`);
+    }
+  });
+}
+
+/**
+ * Check if an Anthropic provider config is in use by any modules
+ */
+export async function isAnthropicProviderConfigInUse(id: number): Promise<boolean> {
+  return isProviderConfigInUse('anthropic', id);
+}
+
+export async function deleteAnthropicProviderConfig(id: number, permanent = false): Promise<void> {
+  const db = getDatabase();
+  
+  if (!permanent && await isAnthropicProviderConfigInUse(id)) {
+    throw new Error(`Anthropic provider config ${id} is in use and cannot be soft deleted`);
+  }
+
+  return withTransaction(db, async (tx) => {
+    if (permanent) {
+      const [result] = await tx.executeSql('DELETE FROM provider_config_anthropic WHERE id = ?', [id]);
+      if (result.rowsAffected === 0) {
+        throw new Error(`Anthropic provider config not found: ${id}`);
+      }
+    } else {
+      const now = new Date().toISOString();
+      const [result] = await tx.executeSql(
+        'UPDATE provider_config_anthropic SET deleted_at = ? WHERE id = ?',
+        [now, id]
+      );
+      if (result.rowsAffected === 0) {
+        throw new Error(`Anthropic provider config not found: ${id}`);
       }
     }
   });

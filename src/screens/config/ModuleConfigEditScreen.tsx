@@ -54,6 +54,9 @@ import {
   createMistralProviderConfig, updateMistralProviderConfig, getMistralProviderConfig, deleteMistralProviderConfig,
   createOllamaProviderConfig, updateOllamaProviderConfig, getOllamaProviderConfig, deleteOllamaProviderConfig,
   createComfyUIProviderConfig, updateComfyUIProviderConfig, getComfyUIProviderConfig, deleteComfyUIProviderConfig,
+  createGoogleProviderConfig, updateGoogleProviderConfig, getGoogleProviderConfig, deleteGoogleProviderConfig,
+  createXAIProviderConfig, updateXAIProviderConfig, getXAIProviderConfig, deleteXAIProviderConfig,
+  createAnthropicProviderConfig, updateAnthropicProviderConfig, getAnthropicProviderConfig, deleteAnthropicProviderConfig,
 } from '../../database/repositories/providers';
 
 type RootStackParamList = {
@@ -66,7 +69,7 @@ type RootStackParamList = {
 type ModuleConfigEditRouteProp = RouteProp<RootStackParamList, 'ModuleConfigEdit'>;
 type ModuleConfigEditNavigationProp = NativeStackNavigationProp<RootStackParamList, 'ModuleConfigEdit'>;
 
-const OPENAI_FAMILY = ['openai', 'openaicompatible', 'openrouter'];
+const OPENAI_FAMILY = ['openai', 'openaicompatible', 'openrouter', 'google', 'xai', 'anthropic'];
 
 const MODULE_REPOSITORIES: Record<string, {
   create: (config: any) => Promise<number>;
@@ -102,6 +105,9 @@ const PROVIDER_REPOSITORIES: Record<string, {
   mistral: { create: createMistralProviderConfig, update: updateMistralProviderConfig, get: getMistralProviderConfig, delete: deleteMistralProviderConfig },
   ollama: { create: createOllamaProviderConfig, update: updateOllamaProviderConfig, get: getOllamaProviderConfig, delete: deleteOllamaProviderConfig },
   comfyui: { create: createComfyUIProviderConfig, update: updateComfyUIProviderConfig, get: getComfyUIProviderConfig, delete: deleteComfyUIProviderConfig },
+  google: { create: createGoogleProviderConfig, update: updateGoogleProviderConfig, get: getGoogleProviderConfig, delete: deleteGoogleProviderConfig },
+  xai: { create: createXAIProviderConfig, update: updateXAIProviderConfig, get: getXAIProviderConfig, delete: deleteXAIProviderConfig },
+  anthropic: { create: createAnthropicProviderConfig, update: updateAnthropicProviderConfig, get: getAnthropicProviderConfig, delete: deleteAnthropicProviderConfig },
 };
 
 export const ModuleConfigEditScreen: React.FC = () => {

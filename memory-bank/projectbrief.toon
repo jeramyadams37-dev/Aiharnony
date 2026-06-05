@@ -29,3 +29,10 @@
 - Provider config parameters across 8 layers: migration → models → repos → sync → clients → frontend schemas
 - Key-value-list field type for editing extra_params in UI
 - Lifecycle Settings UI added to Harmony Link (not synced to app — autonomy controlled locally)
+@RecentUpdates[ProviderExpansion]:
+- xAI/Google/Anthropic providers added across all module types
+- Model field unification: migration 000030 consolidates model columns
+- 15 provider schemas in providerFieldSchemas.ts
+- Dead module-specific schemas removed, merged into main provider schemas
+- Movement module supports Google/xAI/Anthropic providers
+- Shared isProviderConfigInUse() helper with UNION ALL

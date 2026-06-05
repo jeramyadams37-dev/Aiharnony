@@ -418,6 +418,9 @@ export class SyncService extends EventEmitter<SyncServiceEvents> {
         'provider_config_localai': 1,
         'provider_config_mistral': 1,
         'provider_config_comfyui': 1,
+        'provider_config_xai': 1,
+        'provider_config_google': 1,
+        'provider_config_anthropic': 1,
         'backend_configs': 2,
         'cognition_configs': 2,
         'movement_configs': 2,
@@ -623,6 +626,9 @@ export class SyncService extends EventEmitter<SyncServiceEvents> {
         'provider_config_localai',
         'provider_config_mistral',
         'provider_config_comfyui',
+        'provider_config_xai',        // NEW
+        'provider_config_google',     // NEW
+        'provider_config_anthropic',  // NEW
         // Module configs (reference provider configs)
         'backend_configs',
         'cognition_configs',
@@ -967,6 +973,10 @@ export class SyncService extends EventEmitter<SyncServiceEvents> {
       'provider_config_characterai',
       'provider_config_localai',
       'provider_config_mistral',
+      'provider_config_comfyui',
+      'provider_config_xai',
+      'provider_config_google',
+      'provider_config_anthropic',
       'backend_configs',
       'cognition_configs',
       'movement_configs',

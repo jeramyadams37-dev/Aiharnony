@@ -34,3 +34,9 @@
 - Better config control: Key-value list editing for advanced parameters
 - Consistent config: Same provider field schemas as Harmony Link web frontend
 - Note: Lifecycle settings (autonomy config) added to web UI but app handles autonomy locally
+@NewCapabilities[ProviderExpansion]:
+- 15 provider types supported (up from 9): Added Google (Gemini), xAI (Grok), Anthropic (Claude)
+- Model field unification: Simplified provider configs with single `model` column
+- Movement module: Google/xAI/Anthropic provider options for character movement AI
+- Schema-driven UI: No module-specific schemas — one schema per provider, clean and consistent
+- Dead code eliminated: Module-specific field schemas merged, shared isProviderConfigInUse helper

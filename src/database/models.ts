@@ -68,7 +68,6 @@ export interface OpenAIProviderConfig {
   top_p: number | null;
   n: number | null;
   stop_tokens: string | null; // JSON array
-  embedding_model: string | null;
   voice: string | null;
   speed: number | null;
   format: string | null;
@@ -110,6 +109,12 @@ export interface OpenRouterProviderConfig {
   repetition_penalty: number | null;
   sampling_preset_name: string;
   extra_params: string; // JSON string e.g. '{"typical_p": 0.95}'
+  // Provider expansion fields (Migration 30)
+  voice: string | null;
+  speed: number | null;
+  format: string | null;
+  image_aspect_ratio: string | null;
+  image_size: string | null;
   deleted_at: Date | null;
 }
 
@@ -124,7 +129,6 @@ export interface OpenAICompatibleProviderConfig {
   top_p: number | null;
   n: number | null;
   stop_tokens: string | null; // JSON array
-  embedding_model: string | null;
   // New LLM params (Migration 20)
   frequency_penalty: number | null;
   presence_penalty: number | null;
@@ -193,7 +197,7 @@ export interface CharacterAIProviderConfig {
 export interface LocalAIProviderConfig {
   id: number;
   name: string;
-  embedding_model: string;
+  model: string;
   deleted_at: Date | null;
 }
 
@@ -208,7 +212,7 @@ export interface OllamaProviderConfig {
   id: number;
   name: string;
   base_url: string;
-  embedding_model: string | null;
+  model: string | null;
   deleted_at: Date | null;
 }
 
@@ -218,6 +222,63 @@ export interface ComfyUIProviderConfig {
   base_url: string;
   api_key: string;
   workflow_profiles: string;
+  deleted_at: Date | null;
+}
+
+export interface XAIProviderConfig {
+  id: number;
+  name: string;
+  api_key: string;
+  model: string | null;
+  max_tokens: number | null;
+  max_completion_tokens: number | null;
+  temperature: number | null;
+  top_p: number | null;
+  frequency_penalty: number | null;
+  presence_penalty: number | null;
+  n: number | null;
+  stop_tokens: string | null; // JSON array
+  seed: number | null;
+  response_format: string | null;
+  reasoning_effort: string | null;
+  sampling_preset_name: string;
+  extra_params: string; // JSON string
+  image_aspect_ratio: string | null;
+  image_resolution: string | null;
+  deleted_at: Date | null;
+}
+
+export interface GoogleProviderConfig {
+  id: number;
+  name: string;
+  api_key: string;
+  model: string | null;
+  max_output_tokens: number | null;
+  temperature: number | null;
+  top_p: number | null;
+  top_k: number | null;
+  stop_tokens: string | null; // JSON array
+  seed: number | null;
+  response_mime_type: string | null;
+  sampling_preset_name: string;
+  extra_params: string; // JSON string
+  number_of_images: number | null;
+  aspect_ratio: string | null;
+  deleted_at: Date | null;
+}
+
+export interface AnthropicProviderConfig {
+  id: number;
+  name: string;
+  api_key: string;
+  model: string | null;
+  max_tokens: number | null;
+  temperature: number | null;
+  top_p: number | null;
+  top_k: number | null;
+  stop_sequences: string | null; // JSON array
+  sampling_preset_name: string;
+  extra_params: string; // JSON string
   deleted_at: Date | null;
 }
 
@@ -436,7 +497,10 @@ export type ProviderConfig =
   | LocalAIProviderConfig
   | MistralProviderConfig
   | OllamaProviderConfig
-  | ComfyUIProviderConfig;
+  | ComfyUIProviderConfig
+  | XAIProviderConfig
+  | GoogleProviderConfig
+  | AnthropicProviderConfig;
 
 export type ModuleConfig =
   | BackendConfig

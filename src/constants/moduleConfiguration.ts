@@ -24,11 +24,17 @@ export const MODULE_TYPES: ModuleTypeConfig[] = [
     { id: 'kindroid', name: 'Kindroid', icon: 'robot' },
     { id: 'kajiwoto', name: 'Kajiwoto', icon: 'chat' },
     { id: 'characterai', name: 'Character.AI', icon: 'account-voice' },
+    { id: 'google', name: 'Google Gemini', icon: 'google' },
+    { id: 'xai', name: 'xAI / Grok', icon: 'rocket-launch' },
+    { id: 'anthropic', name: 'Anthropic Claude', icon: 'head-lightbulb' },
   ], hasGeneralSettings: false, moduleSpecificFields: [] },
   { id: 'cognition', name: 'Cognition', icon: 'lightbulb-outline', description: 'Emotional cognition engine', providerOptions: [
     { id: 'openai', name: 'OpenAI', icon: 'api' },
     { id: 'openaicompatible', name: 'OpenAI Compatible', icon: 'server' },
     { id: 'openrouter', name: 'OpenRouter', icon: 'router-wireless' },
+    { id: 'google', name: 'Google Gemini', icon: 'google' },
+    { id: 'xai', name: 'xAI / Grok', icon: 'rocket-launch' },
+    { id: 'anthropic', name: 'Anthropic Claude', icon: 'head-lightbulb' },
   ], hasGeneralSettings: true, moduleSpecificFields: [
     { key: 'max_cognition_events', label: 'Max Cognition Events', type: 'number', placeholder: '10' },
     { key: 'generate_expressions', label: 'Generate Expressions (0/1)', type: 'number', placeholder: '0 or 1' },
@@ -37,6 +43,9 @@ export const MODULE_TYPES: ModuleTypeConfig[] = [
     { id: 'openai', name: 'OpenAI', icon: 'api' },
     { id: 'openaicompatible', name: 'OpenAI Compatible', icon: 'server' },
     { id: 'openrouter', name: 'OpenRouter', icon: 'router-wireless' },
+    { id: 'google', name: 'Google Gemini', icon: 'google' },
+    { id: 'xai', name: 'xAI / Grok', icon: 'rocket-launch' },
+    { id: 'anthropic', name: 'Anthropic Claude', icon: 'head-lightbulb' },
   ], hasGeneralSettings: false, moduleSpecificFields: [
     { key: 'startup_sync_timeout', label: 'Startup Sync Timeout', type: 'number', placeholder: '0' },
     { key: 'execution_threshold', label: 'Execution Threshold', type: 'number', placeholder: '0' },
@@ -69,13 +78,18 @@ export const MODULE_TYPES: ModuleTypeConfig[] = [
     { id: 'openai', name: 'OpenAI', icon: 'api' },
     { id: 'openaicompatible', name: 'OpenAI Compatible', icon: 'server' },
     { id: 'openrouter', name: 'OpenRouter', icon: 'router-wireless' },
+    { id: 'google', name: 'Google Gemini', icon: 'google' },
+    { id: 'xai', name: 'xAI / Grok', icon: 'rocket-launch' },
+    { id: 'anthropic', name: 'Anthropic Claude', icon: 'head-lightbulb' },
   ], hasGeneralSettings: false, moduleSpecificFields: [
     { key: 'resolution_width', label: 'Resolution Width', type: 'number', placeholder: '1024' },
     { key: 'resolution_height', label: 'Resolution Height', type: 'number', placeholder: '1024' },
   ] },
   { id: 'imagination', name: 'Imagination', icon: 'lightbulb', description: 'Imagination engine', providerOptions: [
+    { id: 'comfyui', name: 'ComfyUI', icon: 'palette' },
     { id: 'openai', name: 'OpenAI', icon: 'api' },
-    { id: 'openaicompatible', name: 'OpenAI Compatible', icon: 'server' },
     { id: 'openrouter', name: 'OpenRouter', icon: 'router-wireless' },
+    { id: 'google', name: 'Google Gemini', icon: 'google' },
+    { id: 'xai', name: 'xAI / Grok', icon: 'rocket-launch' },
   ], hasGeneralSettings: false, moduleSpecificFields: [] },
 ];

@@ -43,12 +43,14 @@
 @Security: HTTPS only, token auth, encrypted storage, no credentials in code.
 @ProviderArchitecture:
 - App mirrors Harmony Link's provider config system via sync, not management API
-- Provider types: openai, openaicompatible, openrouter (OpenAI family with extended params), elevenlabs, kindroid, kajiwoto, characterai, harmonyspeech (stt/vad/tts), comfyui, tts_openai, rag_*, stt_openai/vad_openai
-- Schema-driven forms: providerFieldSchemas.ts defines fields per provider type
-- Module-specific schemas: tts_openai has voice/speed (not max_tokens/temperature)
+- Provider types: openai, openaicompatible, openrouter (OpenAI family with extended params), elevenlabs, kindroid, kajiwoto, characterai, harmonyspeech (stt/vad/tts), comfyui, tts_openai, rag_*, stt_openai/vad_openai, google, xai, anthropic (15 total)
+- Schema-driven forms: providerFieldSchemas.ts defines fields per provider type (no module-specific schemas — one schema per provider across all modules)
+- Module-specific fields: Merged into main provider schemas with tooltips (e.g., TTS OpenAI voice/speed fields in main OpenAI schema)
 - Sampling preset sync: sampling_preset_name + extra_params columns via migration 021
 - Extra params stored as JSON TEXT, edited as key-value pairs in UI
 - Advanced sampling params: typical_p, tfs, dry_multiplier, dry_base, dry_allowed_length, dry_sequence_breakers, xtc_probability, xtc_threshold
+- Shared isProviderConfigInUse() helper with UNION ALL for existence checks (replaces 8 separate queries)
+- Model field unification: single `model` column per provider config table (migration 000030)
 @InteractionSession:
 - Replaces DualEntitySession pattern: sessions are scoped to interaction IDs (not entity-pair IDs)
 - InteractionSession interface: interactionId, interaction, participantIds, ownEntityId, connections Map (entityId → connection info), pendingTranscriptions Map

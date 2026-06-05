@@ -18,13 +18,15 @@
 @Key Deps: react 19.2.0, react-native 0.83.1, @react-navigation/*  ^7.x, react-native-paper ^5.x, @react-native-async-storage/async-storage ^2.x, react-native-sqlite-storage ^6.x, eventemitter3 ^5.x, uuid ^10.x, music-metadata v11, react-native-device-info.
 @ModularConfig:
 - App mirrors Harmony Link frontend's schema-driven provider configuration approach
-- providerFieldSchemas.ts: schema-driven field definitions for all provider types (openai, openaicompatible, openrouter, elevenlabs, kindroid, kajiwoto, characterai, harmonyspeech_stt/vad/tts, comfyui, tts_openai, rag_*, stt_openai/vad_openai)
-- moduleConfiguration.ts: module type definitions, provider options per module, MODULES/PROVIDERS constants
-- moduleDefaults.ts: PROVIDER_DEFAULTS and MODULE_DEFAULTS for form initialization
+- providerFieldSchemas.ts: 15 provider schemas (openai, openaicompatible, openrouter, elevenlabs, kindroid, kajiwoto, characterai, harmonyspeech_stt/vad/tts, comfyui, tts_openai, rag_*, stt_openai/vad_openai, google, xai, anthropic). No module-specific schemas — one schema per provider, module-specific fields merged into main schemas with tooltips.
+- moduleConfiguration.ts: module type definitions, provider options per module (movement includes Google/xAI/Anthropic), MODULES/PROVIDERS constants
+- moduleDefaults.ts: PROVIDER_DEFAULTS and MODULE_DEFAULTS for form initialization (Google/xAI/Anthropic defaults: maxtokens 200)
 - configHelpers.ts: utility functions for provider field resolution
 - Inline provider config editing in ModuleConfigEditScreen (provider type chips + form fields)
 - Advanced Sampling Parameters component for OpenAI-family extended params
 - Dual-slot support: standard modules (single "provider" slot), STT (dual "transcription"/"vad" slots)
+- Model field unification: migration 000030, single `model` column per provider config table
+- Shared isProviderConfigInUse() helper with UNION ALL for existence checks
 @Phase09-LifecycleUI:
 - Harmony Link management UI adds Lifecycle Settings tab to character profile
 - Exposes lifecycle_config fields for per-entity autonomy configuration

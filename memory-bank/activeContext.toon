@@ -1,5 +1,6 @@
 # Harmony AI App Active Context
 @Focus:
+- Provider Expansion Complete: xAI/Google/Anthropic provider support added across all module types. Model field unification (migration 000030). Dead code cleanup. 15 provider schemas in providerFieldSchemas.ts. 21 provider CRUD functions in providers.ts. ModuleConfigEditScreen supports all 15 providers. Module defaults include Google/xAI/Anthropic (maxtokens: 200).
 - Documentation Complete: Comprehensive Harmony Link integration documentation created in /docs/HARMONY-LINK-INTEGRATION.md with detailed diagrams in /docs/harmony-link-diagrams/.
 - Chat Feature Implementation Complete: Full chat interface with text/audio support, tap-based voice recording, persistent storage, real-time event handling.
 - Database Layer Complete: SQLite with TEXT columns for base64-encoded audio/image data, chat_messages schema with audio/image support. Migrations in /src/database/migrations/.
@@ -115,7 +116,13 @@
 - Connection Types: 'sync' for device sync, 'entity-{entityId}' for chat sessions - distinct connection lifecycle and event routing.
 - Preset Sync Pattern: App does NOT use Harmony Link management API — all preset data flows through WebSocket sync pipeline. Preset name is plain text input, extra params edited as key-value pairs locally.
 - Schema-Driven Config: App uses same providerFieldSchemas.ts as Harmony Link web frontend — ensures consistent provider configuration experience across platforms.
+- Module-Specific Schemas Dead Code: UI looks up `PROVIDER_SCHEMAS[providerType]` by base provider ID — module-specific schema keys (e.g., `tts_openai`) were dead code. Module-specific fields merged into main provider schemas with tooltips.
+- isProviderConfigInUse Pattern: Single UNION ALL across all module config tables is more reliable and maintainable than 8 separate existence checks.
+- providers.ts Garble Prevention: When regenerating a file with many similar CRUD functions, verify all function signatures and table names match — agent can garble large files with repetitive patterns. 15 provider schemas, no module-specific schemas (one schema per provider across all modules).
 - chat_template_kwargs Dropped: Both Go backend and app dropped this dead column in migration 021 — no longer needed for template customization.
+- Model Field Unification: Migration 000030 consolidates `embedding_model`/`image_model`/`imagination_model` into single `model` column per provider config table. RAG structs keep `EmbeddingModel` domain name, mapper bridges.
+- Generic Provider Mappers: One extract/load pair per provider in Go backend, not per module. Module-specific mapper variants deleted as dead code.
+- Shared isProviderConfigInUse: Single UNION ALL query replacing 8 separate existence checks for provider config deletion safety.
 - InteractionSession Migration: Refactored from DualEntitySession (keyed by partnerEntityId) to InteractionSession (keyed by interactionId). Events are now interaction-scoped, not entity-pair-scoped. Supports N participants per session.
 - JOIN Query Performance: JOIN-based queries for chat list (conversation_messages JOIN interactions) reduced N+1 queries to single round-trip for last message preview.
 - Session Resume Flow: INIT_ENTITY response now includes `resumed: true` flag; service checks if backend had a suspended session and reconciles state without re-creating connection.

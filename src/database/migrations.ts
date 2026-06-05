@@ -37,6 +37,7 @@ import { migration026 } from './migrations/000026_add_interaction_summary';
 import { migration027 } from './migrations/000027_interaction_memory_fields';
 import { migration028 } from './migrations/000028_add_presence_type';
 import { migration029 } from './migrations/000029_rag_reindex_flag';
+import { migration030 } from './migrations/000030_add_provider_expansion';
 
 // Migration definition
 interface Migration {
@@ -193,6 +194,11 @@ const MIGRATIONS: Migration[] = [
     version: 29,
     description: 'rag_reindex_flag',
     sql: migration029,
+   },
+   {
+    version: 30,
+    description: 'add_provider_expansion',
+    sql: migration030,
    },
   ];
 
