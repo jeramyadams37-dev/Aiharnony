@@ -11,7 +11,7 @@
 set -euo pipefail
 
 APP_PATH="${1:?Error: Missing .app bundle path argument}"
-IPA_PATH="${2:?Error: Missing output .ipa path argument}"
+IPA_PATH="$(realpath -m "${2:?Error: Missing output .ipa path argument}")"
 
 if [ ! -d "$APP_PATH" ]; then
     echo "Error: App bundle not found at $APP_PATH"

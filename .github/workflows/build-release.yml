@@ -147,9 +147,11 @@ jobs:
       - name: Package unsigned IPA
         run: |
           chmod +x scripts/package-ios-ipa.sh
+          IPA_OUTPUT="${PWD}/harmony-ai-app-${VERSION}-ios.ipa"
           ./scripts/package-ios-ipa.sh \
             ios/build/HarmonyAIChat.xcarchive/Products/Applications/HarmonyAIChat.app \
-            harmony-ai-app-${VERSION}-ios.ipa
+            "${IPA_OUTPUT}"
+          ls -la "${IPA_OUTPUT}"
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
