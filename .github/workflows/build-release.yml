@@ -63,6 +63,7 @@ jobs:
         run: |
           # Update versionName in build.gradle
           sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION}\"/" app/build.gradle
+          chmod +x gradlew
           ./gradlew assembleRelease
 
       - name: Configure AWS Credentials
