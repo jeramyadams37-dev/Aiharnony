@@ -5,7 +5,7 @@ A technical reference for the future "cloud auth" implementation task in the Har
 The cloud connection flow is fundamentally different from the local pairing flow:
 
 **Local flow (existing):** `ws://` unencrypted → HANDSHAKE_REQUEST → user approval → receive JWT + cert → `wss://` with cert
-**Cloud flow (new):** `POST /v1/session/connect` (PASETO auth at session broker) → get proxy endpoint → `wss://conduct.soulbits.app/ws/sync` with `Authorization: Bearer <paseto>` → immediate authenticated connection
+**Cloud flow (new):** `POST /v1/session/connect` (PASETO auth at session broker) → get proxy endpoint → `wss://beta.connect.soulbits.app/ws/sync` with `Authorization: Bearer <paseto>` → immediate authenticated connection
 
 No pairing, no HANDSHAKE_REQUEST, no cert exchange, no device approval. Auth happens upstream at the session broker.
 
@@ -21,9 +21,9 @@ No pairing, no HANDSHAKE_REQUEST, no cert exchange, no device approval. Auth hap
 
 1. **New `CloudWebSocketConnection` class** that sends `Authorization: Bearer <paseto>` as a proper HTTP header on the WebSocket upgrade request
 2. **Uses the existing `react-native-websocket-self-signed` native module** — it already supports custom headers via OkHttp3 on Android and URLSessionWebSocketTask on iOS
-3. **Certificate validation MUST BE ENABLED** — the cloud endpoint (`conduct.soulbits.app`) uses an ACM wildcard cert for `*.soulbits.app`, which is trusted by the system certificate store. Unlike `insecure-ssl` mode, we do NOT disable cert validation.
+3. **Certificate validation MUST BE ENABLED** — the cloud endpoint (`beta.connect.soulbits.app`) uses an ACM wildcard cert for `*.soulbits.app`, which is trusted by the system certificate store. Unlike `insecure-ssl` mode, we do NOT disable cert validation.
 4. **Skips pairing entirely** — no HANDSHAKE_REQUEST, no device approval, no cert exchange. The PASETO token from the user's login is the only credential.
-5. **Connects to fixed cloud endpoints** — `wss://conduct.soulbits.app/ws/sync` and `wss://conduct.soulbits.app/ws/worker` (not user-entered IP/port)
+5. **Connects to fixed cloud endpoints** — `wss://beta.connect.soulbits.app/ws/sync` and `wss://beta.connect.soulbits.app/ws/worker` (not user-entered IP/port)
 6. **PASETO token comes from the existing auth flow** — the app already receives a PASETO v4 token from `POST /v1/auth/login`. This same token is passed as the Bearer credential on the WebSocket.
 7. **API key auth is also supported** — game plugins, automation tools, and management agents can connect using an API key (`sb_cloud_` prefix) instead of a PASETO token. The `Authorization: Bearer <api_key>` header works identically on the backend. The app itself will always use PASETO, but third-party integrations may use API keys through the same proxy endpoint.
 
@@ -31,7 +31,7 @@ No pairing, no HANDSHAKE_REQUEST, no cert exchange, no device approval. Auth hap
 
 | Aspect | Local Modes | Cloud Mode |
 |--------|-------------|------------|
-| URL source | User enters IP:port | Fixed `conduct.soulbits.app` endpoint |
+| URL source | User enters IP:port | Fixed `beta.connect.soulbits.app` endpoint |
 | Auth | JWT from pairing handshake | PASETO from login (or API key for plugins) |
 | Headers | Sec-WebSocket-Protocol hack or none | Proper Authorization: Bearer header |
 | Cert handling | Self-signed or pin | System-trusted ACM cert (validate normally) |
